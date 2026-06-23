@@ -1,0 +1,39 @@
+name: changelog-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changelog-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changelog updated or skip-changelog label present
+        env:
+          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if echo "$LABELS" | grep -q '"skip-changelog"'; then
+            echo "skip-changelog label present — skipping changelog check."
+            exit 0
+          fi
+
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -q '^CHANGELOG\.md$'; then
+            echo "CHANGELOG.md modified in this PR."
+            exit 0
+          fi
+
+          echo "" >&2
+          echo "CHANGELOG.md was not modified and the skip-changelog label is not set." >&2
+          echo "Either:" >&2
+          echo "  - Add a changelog entry under [Unreleased] in CHANGELOG.md, or" >&2
+          echo "  - Add the 'skip-changelog' label to this PR if the change is infra/docs-only." >&2
+          exit 1

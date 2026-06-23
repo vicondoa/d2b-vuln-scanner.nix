@@ -11,3 +11,7 @@ Important defaults:
 
 Generated option docs belong in [options.md](options.md).
 
+For a step-by-step integration walkthrough including flake wiring, nixling
+CLI/manifest configuration, Waybar snippets, and rollback guidance, see
+[consumer-migration.md](consumer-migration.md).
+

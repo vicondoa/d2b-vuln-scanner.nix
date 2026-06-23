@@ -1,16 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-status="$(d2b-vuln-status --json "$@")"
-class="$(jq -r '.class' <<<"$status")"
-text="$(jq -r '.text' <<<"$status")"
-tooltip="$(jq -r '"d2b vulnerability scan: \(.text)\nstate: \(.state)\nscan: \(.ts // "n/a")"' <<<"$status")"
+# Thin Waybar adapter for d2b-vuln-status.
+#
+# Output: Waybar custom-module JSON  {text, class, tooltip}
+#   text    – empty when clean or missing; display string otherwise
+#   class   – mirrors d2b-vuln-status .class (CSS hook for Waybar theme)
+#   tooltip – human-readable multi-line summary
+#
+# On any internal failure the script emits a safe fallback JSON so Waybar
+# never receives invalid output.
 
-if [ "$class" = "clean" ] || [ "$class" = "missing" ]; then
-  display=""
-else
-  display="🐛 $text"
-fi
+state_dir="${D2B_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/d2b-vuln-scanner}"
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --state-dir) state_dir="$2"; shift 2 ;;
+    --help|-h) echo "usage: d2b-vuln-waybar [--state-dir DIR]"; exit 0 ;;
+    *) echo "d2b-vuln-waybar: unknown argument: $1" >&2; exit 64 ;;
+  esac
+done
+
+status="$(d2b-vuln-status --json --state-dir "$state_dir")" || status='{}'
+class="$(jq -r '.class // "error"'          <<<"$status")"
+text="$( jq -r '.text  // "status error"'   <<<"$status")"
+state="$(jq -r '.state // "invalid"'         <<<"$status")"
+ts="$(   jq -r '.ts    // ""'               <<<"$status")"
+tooltip="$(printf 'd2b vulnerability scan: %s\nstate: %s\nscan: %s' \
+  "$text" "$state" "${ts:-n/a}")"
+
+case "$class" in
+  clean|missing) display="" ;;
+  stale)         display="⏱ $text" ;;
+  warning)       display="⚠ $text" ;;
+  *)             display="🐛 $text" ;;
+esac
 
 jq -nc --arg text "$display" --arg class "$class" --arg tooltip "$tooltip" \
   '{text:$text,class:$class,tooltip:$tooltip}'

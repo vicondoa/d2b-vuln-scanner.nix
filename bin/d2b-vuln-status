@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Emits a stable status summary for the most recent scan.
+#
+# States (stable contract – consumers may key on these):
+#   missing          – no summary.json found; scanner has never run
+#   invalid          – summary.json present but lacks a parseable timestamp
+#   stale            – scan timestamp older than D2B_STALE_SECONDS (default 26 h)
+#   scanner_failure  – scan completed but ≥1 non-nixling error occurred
+#   nixling_failure  – scan completed; all errors were nixling-discovery failures
+#   findings         – scan clean but high/critical CVEs present
+#   clean            – scan clean, no high/critical CVEs
+#
+# Classes (stable – used by Waybar CSS and other adapters):
+#   missing / error / stale / warning / critical / clean
+
 json=0
 state_dir="${D2B_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/d2b-vuln-scanner}"
 stale_seconds="${D2B_STALE_SECONDS:-93600}"
@@ -15,25 +29,31 @@ while [ "$#" -gt 0 ]; do
 done
 
 summary="$state_dir/summary.json"
+hc=0; errors=0; nixling_errors=0; ts=""
 if [ ! -s "$summary" ]; then
-  state="missing"; class="missing"; text="no scan"; hc=0; errors=0; ts=""
+  state="missing"; class="missing"; text="no scan"
 else
   ts="$(jq -r '.ts // empty' "$summary" 2>/dev/null || true)"
   hc="$(jq -r '.high_critical // 0' "$summary" 2>/dev/null || echo 0)"
   errors="$(jq -r '.errors // 0' "$summary" 2>/dev/null || echo 0)"
+  nixling_errors="$(jq -r '[.scan_errors[]? | select(.source == "nixling-discovery")] | length' "$summary" 2>/dev/null || echo 0)"
   case "$hc" in (*[!0-9]*|"") hc=0;; esac
   case "$errors" in (*[!0-9]*|"") errors=0;; esac
+  case "$nixling_errors" in (*[!0-9]*|"") nixling_errors=0;; esac
   if [ -z "$ts" ]; then
-    state="invalid"; class="error"; text="invalid scan"
+    state="invalid"; class="error"; text="invalid scan data"
   else
     scan_epoch="$(date -u -d "${ts:0:8} ${ts:9:2}:${ts:11:2}:${ts:13:2}" +%s 2>/dev/null || echo 0)"
     now_epoch="$(date -u +%s)"
     if [ "$scan_epoch" -eq 0 ] || [ $((now_epoch - scan_epoch)) -gt "$stale_seconds" ]; then
       state="stale"; class="stale"; text="stale scan"
-    elif [ "$errors" -gt 0 ]; then
-      state="error"; class="error"; text="$errors scan errors"
+    elif [ "$errors" -gt "$nixling_errors" ]; then
+      other="$((errors - nixling_errors))"
+      state="scanner_failure"; class="error"; text="${other} scan error(s)"
+    elif [ "$nixling_errors" -gt 0 ]; then
+      state="nixling_failure"; class="warning"; text="nixling discovery failed"
     elif [ "$hc" -gt 0 ]; then
-      state="findings"; class="critical"; text="$hc findings"
+      state="findings"; class="critical"; text="${hc} finding(s)"
     else
       state="clean"; class="clean"; text="clean"
     fi
@@ -41,9 +61,16 @@ else
 fi
 
 if [ "$json" -eq 1 ]; then
-  jq -nc --arg state "$state" --arg class "$class" --arg text "$text" --arg ts "$ts" \
-    --argjson high_critical "$hc" --argjson errors "$errors" \
-    '{state:$state,class:$class,text:$text,ts:$ts,high_critical:$high_critical,errors:$errors}'
+  jq -nc \
+    --arg  state          "$state"          \
+    --arg  class          "$class"          \
+    --arg  text           "$text"           \
+    --arg  ts             "$ts"             \
+    --argjson high_critical    "$hc"         \
+    --argjson errors           "$errors"     \
+    --argjson nixling_errors   "$nixling_errors" \
+    '{state:$state,class:$class,text:$text,ts:$ts,
+      high_critical:$high_critical,errors:$errors,nixling_errors:$nixling_errors}'
 else
   printf '%s\n' "$text"
 fi

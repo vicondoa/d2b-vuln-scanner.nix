@@ -1,14 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Opens the latest scan report in a human-readable viewer.
+#
+# Viewer selection (first matching rule wins):
+#   1. D2B_OPEN_ARGV_JSON env var – argv array; use {report} for the path
+#   2. --no-pager flag            – print report path to stdout and exit
+#   3. Terminal (stdout is a tty) – open with `less -R`
+#   4. Non-terminal               – open with `xdg-open`
+
 state_dir="${D2B_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/d2b-vuln-scanner}"
 print_path=0
+no_pager=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --print-path) print_path=1; shift ;;
-    --state-dir) state_dir="$2"; shift 2 ;;
-    --help|-h) echo "usage: d2b-vuln-open [--print-path] [--state-dir DIR]"; exit 0 ;;
+    --no-pager)   no_pager=1;   shift ;;
+    --state-dir)  state_dir="$2"; shift 2 ;;
+    --help|-h)
+      echo "usage: d2b-vuln-open [--print-path] [--no-pager] [--state-dir DIR]"
+      exit 0
+      ;;
     *) echo "d2b-vuln-open: unknown argument: $1" >&2; exit 64 ;;
   esac
 done
@@ -24,8 +37,21 @@ if [ "$print_path" -eq 1 ]; then
   exit 0
 fi
 
+if [ "$no_pager" -eq 1 ]; then
+  cat "$report"
+  exit 0
+fi
+
 if [ -n "${D2B_OPEN_ARGV_JSON:-}" ]; then
-  mapfile -t argv < <(jq -r --arg report "$(readlink -f "$report")" '.[] | gsub("\\{report\\}"; $report)' <<<"$D2B_OPEN_ARGV_JSON")
+  if ! jq -e 'type == "array" and length > 0 and all(.[]; type == "string")' <<<"$D2B_OPEN_ARGV_JSON" >/dev/null; then
+    echo "d2b-vuln-open: D2B_OPEN_ARGV_JSON must be a non-empty JSON array of strings" >&2
+    exit 64
+  fi
+  mapfile -d '' -t argv < <(
+    jq -j --arg report "$(readlink -f "$report")" \
+      '.[] | gsub("\\{report\\}"; $report) | . + "\u0000"' \
+      <<<"$D2B_OPEN_ARGV_JSON"
+  )
   exec "${argv[@]}"
 fi
 
@@ -34,4 +60,3 @@ if [ -t 1 ]; then
 fi
 
 exec xdg-open "$report"
-
