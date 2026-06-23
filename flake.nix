@@ -72,6 +72,92 @@
       checks = forAllSystems (system:
         let
           pkgs = pkgsFor system;
+          lib = pkgs.lib;
+          # ── HM module infrastructure stubs (mirrored in tests/eval-modules.nix)
+          hmStubs = {
+            options = {
+              xdg.stateHome = lib.mkOption {
+                type = lib.types.str;
+                default = "/home/testuser/.local/state";
+              };
+              home.packages = lib.mkOption {
+                type = lib.types.listOf lib.types.package;
+                default = [ ];
+              };
+              home.sessionVariables = lib.mkOption {
+                type = lib.types.attrsOf lib.types.str;
+                default = { };
+              };
+              systemd.user.services = lib.mkOption {
+                type = lib.types.attrsOf lib.types.anything;
+                default = { };
+              };
+              systemd.user.timers = lib.mkOption {
+                type = lib.types.attrsOf lib.types.anything;
+                default = { };
+              };
+            };
+          };
+          evalHm = extraModules:
+            (lib.evalModules {
+              modules = [
+                { _module.args = { pkgs = pkgs; }; }
+                hmStubs
+                (import ./hmModules/default.nix)
+              ] ++ extraModules;
+            }).config;
+          moduleTests = [
+            # 1. Disabled default
+            (let c = evalHm [{ config.programs.d2b-vuln-scanner.enable = false; }]; in
+              assert c.systemd.user.services == { };
+              assert c.systemd.user.timers == { };
+              assert c.home.packages == [ ];
+              assert c.home.sessionVariables == { };
+              "disabled-default: PASS")
+            # 2. Scan-only defaults
+            (let c = evalHm [{ config.programs.d2b-vuln-scanner.enable = true; }]; in
+              assert c.systemd.user.services ? "d2b-vuln-scan";
+              assert !(c.systemd.user.timers ? "d2b-vuln-scan");
+              assert !(c.systemd.user.services ? "d2b-vuln-remediate");
+              assert !(c.home.sessionVariables ? "D2B_STATE_DIR");
+              "scan-only: PASS")
+            # 3. statusHelper.enable sets D2B_STATE_DIR
+            (let c = evalHm [{
+              config.programs.d2b-vuln-scanner = {
+                enable = true;
+                statusHelper.enable = true;
+              };
+            }]; in
+              assert c.home.sessionVariables ? "D2B_STATE_DIR";
+              "status-helper: PASS")
+            # 4. waybar.enable sets D2B_STATE_DIR
+            (let c = evalHm [{
+              config.programs.d2b-vuln-scanner = {
+                enable = true;
+                integrations.waybar.enable = true;
+              };
+            }]; in
+              assert c.home.sessionVariables ? "D2B_STATE_DIR";
+              "waybar-helper: PASS")
+            # 5. Remediation service present when enabled
+            (let c = evalHm [{
+              config.programs.d2b-vuln-scanner = {
+                enable = true;
+                remediation.enable = true;
+              };
+            }]; in
+              assert c.systemd.user.services ? "d2b-vuln-remediate";
+              "remediation-enabled: PASS")
+            # 6. Timer unit present when enabled
+            (let c = evalHm [{
+              config.programs.d2b-vuln-scanner = {
+                enable = true;
+                timer.enable = true;
+              };
+            }]; in
+              assert c.systemd.user.timers ? "d2b-vuln-scan";
+              "timer-enabled: PASS")
+          ];
         in
         {
           shell-tests = pkgs.runCommand "d2b-shell-tests"
@@ -86,8 +172,14 @@
               make test-fixtures
               make test-policy
               make test-nixling-discovery
+              make test-modules
+              make test-changelog
               touch $out
             '';
+          # Module eval: assertions run at Nix eval time (no build sandbox needed).
+          # Any assert failure surfaces as a Nix evaluation error when instantiated.
+          module-eval = pkgs.writeText "d2b-module-eval-results"
+            (builtins.toJSON (builtins.deepSeq moduleTests moduleTests));
         });
 
       homeManagerModules.default = import ./hmModules/default.nix;

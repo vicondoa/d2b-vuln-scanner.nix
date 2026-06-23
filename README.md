@@ -31,6 +31,7 @@ For a Nix/Home Manager consumer, import `homeManagerModules.default`, configure
 
 See:
 
+- [docs/consumer-migration.md](docs/consumer-migration.md) — step-by-step integration guide with rollback
 - [docs/nixling-integration.md](docs/nixling-integration.md)
 - [docs/configuration.md](docs/configuration.md)
 - [docs/desktop-integration.md](docs/desktop-integration.md)

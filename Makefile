@@ -1,10 +1,10 @@
-.PHONY: check test test-unit test-shell test-fixtures test-nix test-policy test-nixling-discovery
+.PHONY: check test test-unit test-shell test-fixtures test-nix test-modules test-policy test-nixling-discovery test-changelog
 
 check: test
 
 test: test-unit
 
-test-unit: test-shell test-fixtures test-nix test-policy test-nixling-discovery
+test-unit: test-shell test-fixtures test-nix test-modules test-policy test-nixling-discovery test-changelog
 
 test-shell:
 	shellcheck bin/d2b-vuln-*
@@ -18,8 +18,14 @@ test-fixtures:
 test-nix:
 	nix flake check --no-build --all-systems
 
+test-modules:
+	bash tests/test-modules.sh
+
 test-policy:
 	bash tests/test-policy.sh
 
 test-nixling-discovery:
 	bash tests/test-nixling-discovery.sh
+
+test-changelog:
+	bash tests/test-changelog.sh

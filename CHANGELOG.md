@@ -11,4 +11,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - Initial nixling-native vulnerability scanner flake skeleton with CLI commands,
   Home Manager/NixOS module placeholders, ADRs, CI, tests, and remediation skills.
-
+- Hardened nixling scanner contracts with richer status/remediation behavior,
+  module eval checks, CI policy gates, consumer migration docs, and downstream
+  vulnerability-fixing skills.
