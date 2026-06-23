@@ -9,6 +9,10 @@ let
     "--state-dir" stateDir
     "--flake" cfg.scan.flake
   ];
+  # Set D2B_STATE_DIR in user sessions when status helpers or Waybar are enabled.
+  # This lets d2b-vuln-status, d2b-vuln-waybar, and d2b-vuln-open find scan
+  # state without requiring --state-dir on every invocation.
+  wantSessionStateDir = cfg.statusHelper.enable || cfg.integrations.waybar.enable;
 in
 {
   options.programs.d2b-vuln-scanner = {
@@ -17,14 +21,22 @@ in
     package = lib.mkOption {
       type = lib.types.nullOr lib.types.package;
       default = null;
-      description = "Package providing the d2b-vuln-* commands. Null means resolve commands from PATH.";
+      description = ''
+        Package supplying the d2b-vuln-* commands. When set, the package is
+        added to home.packages. When null, commands are resolved from PATH
+        (useful when the scanner is installed system-wide or via a NixOS module).
+      '';
     };
 
     nixling = {
       cliPackage = lib.mkOption {
         type = lib.types.nullOr lib.types.package;
         default = null;
-        description = "Optional nixling package. When set, cliPath defaults to this package's executable.";
+        description = ''
+          Optional nixling package. When set, cliPath automatically defaults to
+          this package's executable, so no separate cliPath override is needed.
+          Takes precedence over cliPath when both are set explicitly.
+        '';
       };
       cliPath = lib.mkOption {
         type = lib.types.str;
@@ -32,18 +44,34 @@ in
           if cfg.nixling.cliPackage != null
           then lib.getExe cfg.nixling.cliPackage
           else "nixling";
-        defaultText = lib.literalExpression "lib.getExe cfg.nixling.cliPackage or \"nixling\"";
-        description = "Path or command name used for nixling CLI discovery.";
+        defaultText = lib.literalExpression ''
+          if config.programs.d2b-vuln-scanner.nixling.cliPackage != null
+          then lib.getExe config.programs.d2b-vuln-scanner.nixling.cliPackage
+          else "nixling"
+        '';
+        description = ''
+          Absolute path or bare command name for the nixling CLI. Used as
+          D2B_NIXLING_CLI in the scan service environment. Override this when
+          nixling is not on the default PATH and you are not setting cliPackage.
+        '';
       };
       manifestPath = lib.mkOption {
         type = lib.types.path;
         default = "/run/current-system/sw/share/nixling/vms.json";
-        description = "Public nixling manifest path used as fallback metadata.";
+        description = ''
+          Fallback nixling VM manifest path. Read when nixling list --json is
+          unavailable (e.g. nixling is not installed). The scanner normalises this
+          into the same VM list schema as the live CLI output.
+        '';
       };
       includeNetVms = lib.mkOption {
         type = lib.types.bool;
         default = true;
-        description = "Whether scans include nixling net VMs by default.";
+        description = ''
+          Include nixling net VMs in vulnerability scans. Net VMs have access
+          to host network interfaces; scanning them by default gives the broadest
+          coverage. Set false to limit scans to non-net VMs.
+        '';
       };
     };
 
@@ -51,17 +79,43 @@ in
       flake = lib.mkOption {
         type = lib.types.str;
         default = ".";
-        description = "Consumer flake path used for selected source/input scanning.";
+        description = ''
+          Flake path passed to d2b-vuln-scan --flake. The scanner archives
+          selected non-nixpkgs inputs and runs osv-scanner over them. Passed
+          via ExecStart argument; does not affect the packaged derivation.
+        '';
       };
       stateDir = lib.mkOption {
         type = lib.types.str;
         default = "${config.xdg.stateHome}/d2b-vuln-scanner";
-        description = "XDG state directory for reports, summaries, locks, and remediation logs.";
+        defaultText = lib.literalExpression ''"''${config.xdg.stateHome}/d2b-vuln-scanner"'';
+        description = ''
+          XDG state directory for reports, the summary JSON, scan locks, and
+          remediation prompt logs. Defaults to the XDG_STATE_HOME sub-directory.
+          Passed via ExecStart argument; does not affect the packaged derivation.
+        '';
       };
       hostClosurePath = lib.mkOption {
         type = lib.types.str;
         default = "/run/current-system";
-        description = "Host closure path to scan.";
+        description = ''
+          Host NixOS system closure path to scan. sbomnix generates a CycloneDX
+          SBOM from this path; grype then checks it for known CVEs. Passed via
+          D2B_HOST_CLOSURE; does not affect the packaged derivation.
+        '';
+      };
+    };
+
+    statusHelper = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Expose the scan state directory as D2B_STATE_DIR in user sessions.
+          When enabled, d2b-vuln-status, d2b-vuln-waybar, and d2b-vuln-open
+          locate scan state without needing --state-dir on every invocation.
+          Harmless when the scanner is not installed on this machine.
+        '';
       };
     };
 
@@ -69,41 +123,58 @@ in
       enable = lib.mkOption {
         type = lib.types.bool;
         default = false;
-        description = "Whether to enable the user timer.";
+        description = ''
+          Enable a systemd user timer that runs d2b-vuln-scan automatically.
+          Disabled by default; consumers opt in to scheduled scanning.
+        '';
       };
       onCalendar = lib.mkOption {
         type = lib.types.str;
         default = "daily";
-        description = "systemd OnCalendar value for the scanner timer.";
+        description = "systemd OnCalendar expression for the scan timer.";
       };
       randomizedDelaySec = lib.mkOption {
         type = lib.types.str;
         default = "30min";
-        description = "RandomizedDelaySec for the scanner timer.";
+        description = "RandomizedDelaySec for the scan timer. Spreads load across a fleet.";
       };
       fixedRandomDelay = lib.mkOption {
         type = lib.types.bool;
         default = true;
-        description = "Whether systemd should keep the randomized delay stable per machine.";
+        description = "Stabilise the random delay across reboots (FixedRandomDelay=yes).";
       };
     };
 
     notifications.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Whether scanner commands may send standard D-Bus notifications.";
+      description = ''
+        Allow the scanner to send D-Bus desktop notifications. When true,
+        D2B_NOTIFY_FAILURES and D2B_NOTIFY_FINDINGS are set to 1 in the
+        service environment. Set false to suppress all notify-send calls.
+      '';
     };
 
     integrations.waybar = {
       enable = lib.mkOption {
         type = lib.types.bool;
         default = false;
-        description = "Install Waybar helper command and snippets.";
+        description = ''
+          Enable Waybar status-bar integration. Also sets D2B_STATE_DIR in
+          user sessions (same effect as statusHelper.enable) so d2b-vuln-waybar
+          finds scan state without --state-dir. Requires d2b-vuln-waybar to be
+          on PATH (set package, or install the scanner system-wide).
+        '';
       };
       autowire = lib.mkOption {
         type = lib.types.bool;
         default = false;
-        description = "Explicitly opt into Home Manager Waybar autowiring for the d2b-vuln module.";
+        description = ''
+          Explicitly opt into Home Manager Waybar module autowiring. When true
+          and Home Manager manages programs.waybar, the d2b-vuln custom module
+          is added automatically. Leave false when your Waybar config is managed
+          outside Home Manager.
+        '';
       };
     };
 
@@ -111,23 +182,42 @@ in
       enable = lib.mkOption {
         type = lib.types.bool;
         default = false;
-        description = "Whether to install remediation helper integration.";
+        description = ''
+          Install the d2b-vuln-remediate systemd user service. Disabled by
+          default; consumers opt in to automated remediation agent execution.
+        '';
       };
       autoStartOnSuccess = lib.mkOption {
         type = lib.types.bool;
         default = false;
-        description = "Whether successful scans should start remediation. Disabled by default.";
+        description = ''
+          Start d2b-vuln-remediate.service automatically when a scan succeeds
+          (via systemd OnSuccess=). Requires remediation.enable = true.
+          Disabled by default for safety; requires explicit opt-in.
+        '';
       };
       agent.argv = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = [ ];
-        description = "Argv vector for the vulnerability-fixing agent. Use {prompt_file} as placeholder.";
+        description = ''
+          Argv vector passed to d2b-vuln-remediate --agent-argv-json. Use the
+          literal string {prompt_file} as a placeholder for the generated prompt
+          path. Empty list disables agent execution (prompt is written but no
+          process is launched).
+        '';
       };
     };
   };
 
   config = lib.mkIf cfg.enable {
     home.packages = lib.mkIf (cfg.package != null) [ cfg.package ];
+
+    # Expose the state directory path in user sessions when status helpers or
+    # Waybar integration are active. Commands pick this up automatically so
+    # consumers do not need to pass --state-dir interactively.
+    home.sessionVariables = lib.mkIf wantSessionStateDir {
+      D2B_STATE_DIR = stateDir;
+    };
 
     systemd.user.services.d2b-vuln-scan = {
       Unit = {
@@ -149,6 +239,9 @@ in
         ];
         Nice = 10;
         IOSchedulingClass = "idle";
+        IOSchedulingPriority = 7;
+        CPUWeight = 50;
+        MemoryMax = "1G";
         RuntimeMaxSec = "2h";
       };
     };
