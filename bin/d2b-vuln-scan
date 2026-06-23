@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+usage: d2b-vuln-scan [--dry-run] [--state-dir DIR] [--flake PATH]
+
+Nixling-native vulnerability scan. Discovers VMs with `nixling list --json`,
+falls back to the public nixling manifest when configured/available, and scans
+host/VM closures plus selected flake inputs.
+USAGE
+}
+
+dry_run=0
+state_dir="${D2B_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/d2b-vuln-scanner}"
+cache_dir="${D2B_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/d2b-vuln-scanner}"
+flake="${D2B_FLAKE:-.}"
+host_closure="${D2B_HOST_CLOSURE:-/run/current-system}"
+nixling_cli="${D2B_NIXLING_CLI:-nixling}"
+nixling_manifest="${D2B_NIXLING_MANIFEST:-/run/current-system/sw/share/nixling/vms.json}"
+include_net_vms="${D2B_INCLUDE_NET_VMS:-1}"
+severity_threshold="${D2B_SEVERITY_THRESHOLD:-High}"
+retention="${D2B_REPORT_RETENTION:-20}"
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dry-run) dry_run=1; shift ;;
+    --state-dir) state_dir="$2"; shift 2 ;;
+    --flake) flake="$2"; shift 2 ;;
+    --help|-h) usage; exit 0 ;;
+    *) echo "d2b-vuln-scan: unknown argument: $1" >&2; usage >&2; exit 64 ;;
+  esac
+done
+
+umask 077
+mkdir -p "$state_dir" "$cache_dir"
+chmod 700 "$state_dir" "$cache_dir"
+export GRYPE_DB_CACHE_DIR="${GRYPE_DB_CACHE_DIR:-$cache_dir/grype-db}"
+export SSL_CERT_FILE="${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}"
+
+exec 9>"$state_dir/scan.lock"
+flock 9
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+findings="$work/findings.ndjson"
+errors="$work/errors.ndjson"
+vms_json="$work/vms.json"
+: > "$findings"
+: > "$errors"
+
+ts="$(date -u +%Y%m%dT%H%M%SZ)"
+
+json_error() {
+  jq -nc --arg source "$1" --arg message "$2" \
+    '{source:$source,message:$message}' >> "$errors"
+}
+
+discover_vms() {
+  if "$nixling_cli" list --json > "$vms_json" 2>"$work/nixling-list.err"; then
+    if jq -e 'type == "array" and all(.[]; has("name") and has("status") and has("isNetVm"))' "$vms_json" >/dev/null; then
+      return 0
+    fi
+    json_error nixling-discovery "nixling list --json returned invalid schema"
+  else
+    json_error nixling-discovery "$(tr '\n' ' ' < "$work/nixling-list.err" | sed 's/[[:space:]]*$//')"
+  fi
+
+  if [ -r "$nixling_manifest" ]; then
+    jq 'to_entries
+      | map(select(.key | startswith("_") | not))
+      | map({
+          name: (.value.name // .key),
+          env: (.value.env // null),
+          graphics: (.value.graphics // false),
+          tpm: (.value.tpm // false),
+          usbip: (.value.usbipYubikey // .value.usbip // false),
+          staticIp: (.value.staticIp // null),
+          status: "unknown",
+          isNetVm: (.value.isNetVm // false)
+        })' "$nixling_manifest" > "$vms_json" 2>/dev/null \
+      || { json_error nixling-discovery "fallback manifest is malformed"; return 1; }
+    return 0
+  fi
+
+  return 1
+}
+
+scan_closure() {
+  local label="$1"
+  local path="$2"
+  local safe_label cdx gj
+  safe_label="$(printf '%s' "$label" | tr -c 'A-Za-z0-9_.-' '_')"
+  cdx="$work/$safe_label.cdx.json"
+  gj="$work/$safe_label.grype.json"
+
+  if [ "$dry_run" -eq 1 ]; then
+    echo "dry-run: would scan $label $path" >&2
+    return 0
+  fi
+
+  if ! sbomnix "$path" --cdx="$cdx" >/dev/null 2>"$work/$safe_label.sbom.err"; then
+    json_error "$label" "sbomnix failed"
+    return 0
+  fi
+
+  grype "sbom:$cdx" --only-fixed -o json -q > "$gj" 2>/dev/null || true
+  jq -c --arg src "$label" \
+    '.matches[]? | {src:$src, id:.vulnerability.id, pkg:.artifact.name,
+       version:.artifact.version, severity:.vulnerability.severity,
+       fixed:((.vulnerability.fix.versions // []) | join(", "))}' \
+    "$gj" >> "$findings" 2>/dev/null || true
+}
+
+vm_closure_path() {
+  local vm="$1"
+  local inspect="$work/inspect-$vm.json"
+  if "$nixling_cli" inspect "$vm" --json > "$inspect" 2>/dev/null; then
+    jq -r '.closureOutPath // .closurePath // .guestClosureOutPath // .outPath // empty' "$inspect"
+    return 0
+  fi
+  return 1
+}
+
+osv_sev() {
+  awk -v s="$1" 'BEGIN{
+    if(s==""){print "Unknown"}
+    else if(s+0>=9){print "Critical"}
+    else if(s+0>=7){print "High"}
+    else if(s+0>=4){print "Medium"}
+    else if(s+0>0){print "Low"}
+    else {print "Unknown"}}'
+}
+
+scan_inputs() {
+  [ "$dry_run" -eq 0 ] || return 0
+  nix flake archive --json --no-write-lock-file "$flake" 2>/dev/null \
+    | jq -r '.inputs | to_entries[]
+      | select(.key | test("^nixpkgs($|-)") | not)
+      | "\(.key)=\(.value.path)"' \
+    | while IFS='=' read -r name path; do
+        [ -n "$name" ] && [ -d "$path" ] || continue
+        oj="$work/dep-$name.osv.json"
+        osv-scanner -r --format json "$path" > "$oj" 2>/dev/null || true
+        jq -c --arg src "dep:$name" '
+          (.results[]?.packages[]?) as $p | ($p.groups[]?) as $g |
+          {src:$src, ids:$g.ids, max:($g.max_severity // ""),
+           pkg:$p.package.name, version:$p.package.version}
+          | .ids[] as $id | {src:.src, id:$id, pkg:.pkg, version:.version, max:.max}' \
+          "$oj" 2>/dev/null \
+          | while IFS= read -r row; do
+              sev="$(osv_sev "$(jq -r '.max' <<<"$row")")"
+              jq -c --arg sev "$sev" '. + {severity:$sev, fixed:""} | del(.max)' <<<"$row"
+            done >> "$findings" || true
+      done || true
+}
+
+if ! discover_vms; then
+  json_error nixling-discovery "could not discover nixling VMs"
+fi
+
+if [ -e "$host_closure" ]; then
+  scan_closure "nix:host" "$host_closure"
+else
+  json_error nix:host "host closure path is not readable: $host_closure"
+fi
+
+jq -c --arg include_net "$include_net_vms" '
+  .[]
+  | select(($include_net == "1" or $include_net == "true") or (.isNetVm | not))
+  | {name, env, status, isNetVm}' "$vms_json" 2>/dev/null \
+  | while IFS= read -r vmrow; do
+      vm="$(jq -r '.name' <<<"$vmrow")"
+      if [[ ! "$vm" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        json_error "nix:nixling-vm" "invalid VM name from nixling: $vm"
+        continue
+      fi
+      closure="$(vm_closure_path "$vm" || true)"
+      if [ -z "$closure" ]; then
+        json_error "nix:nixling-vm:$vm" "nixling did not expose a VM closure out path"
+        continue
+      fi
+      scan_closure "nix:nixling-vm:$vm" "$closure"
+    done
+
+scan_inputs
+
+grouped="$work/findings.grouped.ndjson"
+jq -s -c --arg threshold "$severity_threshold" '
+  def keep:
+    if $threshold == "Critical" then .severity == "Critical"
+    else .severity == "Critical" or .severity == "High"
+    end;
+  map(select(keep))
+  | sort_by(.id, .pkg, (.version // ""))
+  | group_by([.id, .pkg, (.version // "")])
+  | .[]
+  | {
+      src: (map(.src) | unique | join(", ")),
+      id: .[0].id,
+      pkg: .[0].pkg,
+      version: .[0].version,
+      severity: (if map(.severity) | index("Critical") then "Critical" else "High" end),
+      fixed: (map(.fixed // "") | map(select(. != "")) | unique | join("; "))
+    }' "$findings" > "$grouped" 2>/dev/null || : > "$grouped"
+mv "$grouped" "$findings"
+
+sevcount() { grep -c "\"severity\":\"$1\"" "$findings" 2>/dev/null || true; }
+c="$(sevcount Critical)"; h="$(sevcount High)"
+c="${c:-0}"; h="${h:-0}"
+total="$(wc -l < "$findings" | tr -d ' ')"
+err_total="$(wc -l < "$errors" | tr -d ' ')"
+
+prev_ids="$state_dir/known-ids.txt"
+touch "$prev_ids"
+cur_ids="$work/cur-ids.txt"
+jq -r '[.id, .pkg, (.version // "")] | @tsv' "$findings" 2>/dev/null | sort -u > "$cur_ids"
+new_ids="$work/new-ids.txt"
+comm -23 "$cur_ids" "$prev_ids" > "$new_ids"
+new_highcrit="$(wc -l < "$new_ids" | tr -d ' ')"
+
+summary_tmp="$state_dir/summary.json.tmp"
+jq -n \
+  --arg ts "$ts" \
+  --argjson critical "$c" \
+  --argjson high "$h" \
+  --argjson total "$total" \
+  --argjson newhc "$new_highcrit" \
+  --argjson errors "$err_total" \
+  --slurpfile scan_errors "$errors" \
+  --slurpfile vms "$vms_json" \
+  '{ts:$ts,
+    totals:{critical:$critical, high:$high, total:$total},
+    high_critical:($critical+$high),
+    new_high_critical:$newhc,
+    errors:$errors,
+    scan_errors:$scan_errors,
+    nixling:{vm_count:($vms[0] | length)}}' > "$summary_tmp"
+mv "$summary_tmp" "$state_dir/summary.json"
+
+report="$state_dir/report-$ts.txt"
+{
+  echo "d2b-vuln-scanner report $ts"
+  echo "totals: critical=$c high=$h grouped-total=$total new-critical-high=$new_highcrit errors=$err_total"
+  echo
+  if [ "$err_total" -gt 0 ]; then
+    echo "SCAN ERRORS"
+    jq -r '"- \(.source): \(.message)"' "$errors"
+    echo
+  fi
+  printf '%-9s %-24s %-26s %-28s %s\n' SEVERITY ID PACKAGE SOURCE FIXED
+  jq -r '[.severity,.id,(.pkg+" "+(.version//"")),.src,(.fixed//"")] | @tsv' "$findings" 2>/dev/null \
+    | awk -F'\t' 'BEGIN{o["Critical"]=0;o["High"]=1}{print o[$1]"\t"$0}' \
+    | sort -k1,1n -k3,3 | cut -f2- \
+    | awk -F'\t' '{printf "%-9s %-24s %-26s %-28s %s\n",$1,$2,$3,$4,$5}'
+} > "$report"
+ln -sfn "$(basename "$report")" "$state_dir/latest.txt"
+cp "$cur_ids" "$prev_ids"
+
+find "$state_dir" -maxdepth 1 -name 'report-*.txt' -printf '%T@ %p\0' 2>/dev/null \
+  | sort -z -n | head -z -n "-$retention" | cut -z -d' ' -f2- | xargs -0 -r rm -f
+
+echo "summary: critical=$c high=$h grouped-total=$total errors=$err_total new-critical-high=$new_highcrit"
+echo "report: $report"
+
+if [ "$err_total" -gt 0 ] && [ "${D2B_NOTIFY_FAILURES:-0}" = "1" ] && command -v notify-send >/dev/null 2>&1; then
+  notify-send -u critical -a d2b-vuln-scanner "Vulnerability scan failed" "See $report" || true
+fi
+if [ "$new_highcrit" -gt 0 ] && [ "${D2B_NOTIFY_FINDINGS:-0}" = "1" ] && command -v notify-send >/dev/null 2>&1; then
+  notify-send -u critical -a d2b-vuln-scanner "$new_highcrit new vulnerabilities" "critical $c · high $h" || true
+fi
+

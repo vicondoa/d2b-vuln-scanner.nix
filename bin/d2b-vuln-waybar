@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+status="$(d2b-vuln-status --json "$@")"
+class="$(jq -r '.class' <<<"$status")"
+text="$(jq -r '.text' <<<"$status")"
+tooltip="$(jq -r '"d2b vulnerability scan: \(.text)\nstate: \(.state)\nscan: \(.ts // "n/a")"' <<<"$status")"
+
+if [ "$class" = "clean" ] || [ "$class" = "missing" ]; then
+  display=""
+else
+  display="🐛 $text"
+fi
+
+jq -nc --arg text "$display" --arg class "$class" --arg tooltip "$tooltip" \
+  '{text:$text,class:$class,tooltip:$tooltip}'
+

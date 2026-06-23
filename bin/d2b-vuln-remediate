@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state_dir="${D2B_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/d2b-vuln-scanner}"
+max_age_seconds="${D2B_REMEDIATION_MAX_SCAN_AGE_SECONDS:-7200}"
+agent_json="${D2B_AGENT_ARGV_JSON:-}"
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --state-dir) state_dir="$2"; shift 2 ;;
+    --agent-argv-json) agent_json="$2"; shift 2 ;;
+    --help|-h) echo "usage: d2b-vuln-remediate [--agent-argv-json JSON] [--state-dir DIR]"; exit 0 ;;
+    *) echo "d2b-vuln-remediate: unknown argument: $1" >&2; exit 64 ;;
+  esac
+done
+
+umask 077
+mkdir -p "$state_dir/remediation"
+chmod 700 "$state_dir" "$state_dir/remediation"
+
+exec 9>"$state_dir/remediate.lock"
+flock 9
+
+summary="$state_dir/summary.json"
+report="$state_dir/latest.txt"
+if [ ! -s "$summary" ] || [ ! -e "$report" ]; then
+  echo "d2b-vuln-remediate: missing scan state" >&2
+  exit 75
+fi
+
+ts="$(jq -r '.ts // empty' "$summary")"
+if [ -z "$ts" ]; then
+  echo "d2b-vuln-remediate: summary has no timestamp" >&2
+  exit 75
+fi
+scan_epoch="$(date -u -d "${ts:0:8} ${ts:9:2}:${ts:11:2}:${ts:13:2}" +%s 2>/dev/null || echo 0)"
+now_epoch="$(date -u +%s)"
+if [ "$scan_epoch" -eq 0 ] || [ $((now_epoch - scan_epoch)) -gt "$max_age_seconds" ]; then
+  echo "d2b-vuln-remediate: latest scan is stale: $ts" >&2
+  exit 75
+fi
+
+prompt="$state_dir/remediation/prompt-$(date -u +%Y%m%dT%H%M%SZ).md"
+cat > "$prompt" <<EOF
+Use the d2b vulnerability remediation skill to address Critical/High findings.
+
+Report: $(readlink -f "$report")
+Summary: $(readlink -f "$summary")
+
+Rules:
+- Treat nixling VM closure findings as nixling findings.
+- Propose changes for review; do not silently commit, apply, deploy, or merge.
+- Preserve cache-safe Nix remediation policy.
+- Re-run d2b-vuln-scan after changes and document residual findings.
+EOF
+chmod 600 "$prompt"
+
+echo "d2b-vuln-remediate: prompt written to $prompt"
+
+if [ -z "$agent_json" ]; then
+  echo "d2b-vuln-remediate: no agent configured; set --agent-argv-json." >&2
+  exit 0
+fi
+
+mapfile -t argv < <(jq -r --arg prompt "$prompt" '.[] | gsub("\\{prompt_file\\}"; $prompt)' <<<"$agent_json")
+log="$state_dir/remediation/remediate-$(date -u +%Y%m%dT%H%M%SZ).log"
+set +e
+"${argv[@]}" 2>&1 | tee "$log"
+status="${PIPESTATUS[0]}"
+set -e
+exit "$status"
+

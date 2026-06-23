@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state_dir="${D2B_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/d2b-vuln-scanner}"
+cache_dir="${D2B_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/d2b-vuln-scanner}"
+
+cmd="${1:-}"
+shift || true
+yes=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --yes) yes=1; shift ;;
+    --state-dir) state_dir="$2"; shift 2 ;;
+    --cache-dir) cache_dir="$2"; shift 2 ;;
+    --help|-h) cmd="help"; shift ;;
+    *) echo "d2b-vuln-state: unknown argument: $1" >&2; exit 64 ;;
+  esac
+done
+
+case "$cmd" in
+  reset)
+    if [ "$yes" -ne 1 ]; then
+      echo "Refusing to remove scanner state without --yes." >&2
+      echo "Would remove: $state_dir and $cache_dir" >&2
+      exit 64
+    fi
+    rm -rf -- "$state_dir" "$cache_dir"
+    ;;
+  help|--help|-h|"")
+    echo "usage: d2b-vuln-state reset --yes [--state-dir DIR] [--cache-dir DIR]"
+    ;;
+  *)
+    echo "d2b-vuln-state: unknown command: $cmd" >&2
+    exit 64
+    ;;
+esac
+
