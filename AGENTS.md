@@ -40,7 +40,25 @@ Reviewers return JSON:
 
 `signoff` is true iff `recommendations` is empty.
 
-## Conventions
+## Skills and remediation
+
+The `skills/` directory ships `d2b-vuln-remediation` skill definitions
+(GitHub and Claude variants) for **downstream vulnerability-fixing agents**
+that operate on scanner findings in consumer repositories.  These skills are
+not the contributor workflow for this scanner repository.
+
+Key skill policies:
+- Bucket findings by `nix:host`, `nix:nixling-vm:<name>`, and `dep:<input>`
+  source labels before proposing fixes.
+- Prefer cache-safe Nix input bumps over local source overrides.
+- Always propose changes for review; never silently commit, merge, or deploy.
+- Re-run the scanner after fixes and document residual findings.
+- Never embed private consumer paths, hostnames, or VM names.
+
+`d2b-vuln-remediate` writes a structured prompt file and optionally launches
+an agent argv vector (`{prompt_file}` placeholder or stdin mode).  See
+`docs/remediation.md` for the full prompt-file contract, invocation modes,
+retention settings, and exit codes.
 
 - Apache-2.0 license.
 - Keep a Changelog + Semantic Versioning.

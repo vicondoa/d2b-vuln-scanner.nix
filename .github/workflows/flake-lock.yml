@@ -1,0 +1,51 @@
+name: flake-lock
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # every Monday at 08:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-flake-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Update flake.lock
+        id: update
+        run: |
+          nix flake update
+          if git diff --quiet flake.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update flake-lock PR
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b flake-lock-update
+          git add flake.lock
+          git commit -m "flake.lock: weekly update"
+          git push --force-with-lease origin flake-lock-update
+
+          if ! gh pr view flake-lock-update --json number -q .number 2>/dev/null; then
+            gh pr create \
+              --title "flake.lock: weekly update" \
+              --body "$(printf 'Automated weekly \`nix flake update\`.\n\nReview the diff and run \`make check\` before merging.\n\nLabel \`skip-changelog\` is appropriate for lock-only updates.')" \
+              --base main \
+              --head flake-lock-update
+          fi

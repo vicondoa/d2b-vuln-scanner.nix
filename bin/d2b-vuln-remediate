@@ -1,15 +1,44 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Exit codes:
+#   0   Prompt written; agent ran successfully (or no agent configured).
+#   64  Usage error.
+#   75  Scan state missing or stale — re-run d2b-vuln-scan first.
+#   *   Agent's own exit status forwarded.
+
 state_dir="${D2B_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/d2b-vuln-scanner}"
 max_age_seconds="${D2B_REMEDIATION_MAX_SCAN_AGE_SECONDS:-7200}"
 agent_json="${D2B_AGENT_ARGV_JSON:-}"
+flake="${D2B_FLAKE:-.}"
+prompt_retention="${D2B_REMEDIATION_PROMPT_RETENTION:-20}"
+log_retention="${D2B_REMEDIATION_LOG_RETENTION:-20}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --state-dir) state_dir="$2"; shift 2 ;;
-    --agent-argv-json) agent_json="$2"; shift 2 ;;
-    --help|-h) echo "usage: d2b-vuln-remediate [--agent-argv-json JSON] [--state-dir DIR]"; exit 0 ;;
+    --state-dir)        state_dir="$2";  shift 2 ;;
+    --agent-argv-json)  agent_json="$2"; shift 2 ;;
+    --flake)            flake="$2";      shift 2 ;;
+    --help|-h)
+      cat <<'USAGE'
+usage: d2b-vuln-remediate [--agent-argv-json JSON] [--state-dir DIR] [--flake PATH]
+
+Write a structured prompt file from current scan state and optionally invoke a
+remediation agent with an argv vector.
+
+Agent invocation modes (mutually exclusive, auto-detected):
+  {prompt_file} mode  Any argv element containing the literal text "{prompt_file}"
+                      is replaced with the absolute path of the generated prompt.
+  stdin mode          When no argv element contains "{prompt_file}", the prompt
+                      content is supplied to the agent on standard input.
+
+Exit codes:
+  0   Prompt written; agent ran successfully (or no agent configured).
+  64  Usage error.
+  75  Scan state missing or stale — re-run d2b-vuln-scan first.
+  *   Agent's own exit status forwarded.
+USAGE
+      exit 0 ;;
     *) echo "d2b-vuln-remediate: unknown argument: $1" >&2; exit 64 ;;
   esac
 done
@@ -24,49 +53,169 @@ flock 9
 summary="$state_dir/summary.json"
 report="$state_dir/latest.txt"
 if [ ! -s "$summary" ] || [ ! -e "$report" ]; then
-  echo "d2b-vuln-remediate: missing scan state" >&2
+  echo "d2b-vuln-remediate: missing scan state; run d2b-vuln-scan first" >&2
   exit 75
 fi
 
 ts="$(jq -r '.ts // empty' "$summary")"
 if [ -z "$ts" ]; then
-  echo "d2b-vuln-remediate: summary has no timestamp" >&2
+  echo "d2b-vuln-remediate: summary missing timestamp; re-run d2b-vuln-scan" >&2
   exit 75
 fi
+
 scan_epoch="$(date -u -d "${ts:0:8} ${ts:9:2}:${ts:11:2}:${ts:13:2}" +%s 2>/dev/null || echo 0)"
 now_epoch="$(date -u +%s)"
 if [ "$scan_epoch" -eq 0 ] || [ $((now_epoch - scan_epoch)) -gt "$max_age_seconds" ]; then
-  echo "d2b-vuln-remediate: latest scan is stale: $ts" >&2
+  echo "d2b-vuln-remediate: latest scan is stale (scanned at $ts); re-run d2b-vuln-scan" >&2
   exit 75
 fi
 
-prompt="$state_dir/remediation/prompt-$(date -u +%Y%m%dT%H%M%SZ).md"
-cat > "$prompt" <<EOF
-Use the d2b vulnerability remediation skill to address Critical/High findings.
+summary_path="$(readlink -f "$summary")"
+report_path="$(readlink -f "$report")"
 
-Report: $(readlink -f "$report")
-Summary: $(readlink -f "$summary")
+critical="$(jq -r '.totals.critical // 0' "$summary")"
+high="$(jq -r '.totals.high     // 0' "$summary")"
+high_critical="$(jq -r '.high_critical  // 0' "$summary")"
+new_hc="$(jq -r '.new_high_critical // 0' "$summary")"
+vm_count="$(jq -r '.nixling.vm_count // 0' "$summary")"
+scan_errors="$(jq -r '.errors // 0' "$summary")"
 
-Rules:
-- Treat nixling VM closure findings as nixling findings.
-- Propose changes for review; do not silently commit, apply, deploy, or merge.
-- Preserve cache-safe Nix remediation policy.
-- Re-run d2b-vuln-scan after changes and document residual findings.
-EOF
+vm_labels="$(grep -oE 'nix:nixling-vm:[A-Za-z0-9._-]+' "$report_path" 2>/dev/null \
+  | sort -u | paste -sd ' ' - || true)"
+vm_labels="${vm_labels:-none detected}"
+
+scan_cmd="d2b-vuln-scan --state-dir $(printf '%q' "$state_dir") --flake $(printf '%q' "$flake")"
+
+prompt_ts="$(date -u +%Y%m%dT%H%M%SZ)"
+prompt="$state_dir/remediation/prompt-${prompt_ts}.md"
+
+cat > "$prompt" <<PROMPT_EOF
+# d2b-vuln-scanner Remediation Prompt
+
+Generated: ${prompt_ts}
+Scanner state directory: ${state_dir}
+
+## Scan result context
+
+| Field                       | Value                             |
+|-----------------------------|-----------------------------------|
+| Summary JSON                | ${summary_path}                   |
+| Latest report               | ${report_path}                    |
+| Scan timestamp              | ${ts}                             |
+| Critical findings           | ${critical}                       |
+| High findings               | ${high}                           |
+| Total critical+high         | ${high_critical}                  |
+| New critical+high this run  | ${new_hc}                         |
+| Scan errors                 | ${scan_errors}                    |
+| Nixling VMs discovered      | ${vm_count}                       |
+| VM source labels in report  | ${vm_labels}                      |
+
+## Source label taxonomy
+
+Findings are tagged with source labels in the SOURCE column of the report:
+
+- \`nix:host\`                  — vulnerabilities in the host NixOS closure.
+- \`nix:nixling-vm:<vm-name>\`  — vulnerabilities in the named nixling VM's closure.
+- \`dep:<input-name>\`          — vulnerabilities from scanning a flake input via osv-scanner.
+
+Treat every \`nix:nixling-vm:\` finding as a nixling closure finding.
+When the same CVE appears in both \`nix:host\` and one or more VM labels,
+a single nixpkgs input bump typically fixes all instances at once.
+
+## How to read the report
+
+Open the report at ${report_path}.
+Columns: SEVERITY  ID  PACKAGE+VERSION  SOURCE  FIXED-VERSION
+
+Group findings by source label to identify which component needs the fix.
+The FIXED column shows the version already available upstream; a non-empty
+value means a drop-in package bump is sufficient.
+
+## Validation: re-run scan after changes
+
+After proposing fixes, re-run the scanner to confirm the finding count decreased:
+
+    ${scan_cmd}
+
+Residual findings that cannot be remediated (no upstream patch yet, or
+cache-safety requires waiting for a binary substitute) MUST be documented
+explicitly in the PR/change description as:
+
+    residual: <CVE-ID> <brief reason>
+
+## Nix remediation policy (cache-safe)
+
+1. Prefer bumping the \`nixpkgs\` (or relevant nixling) input to a revision
+   that already has a binary substitute on cache.nixos.org.
+2. Do NOT introduce local source overrides for core or high-fanout packages
+   (e.g. OpenSSL, glibc, LLVM, systemd, Python, Perl, GStreamer, ffmpeg).
+   Such overrides invalidate binary caches and force a full local rebuild.
+3. For \`dep:<input>\` findings, prefer bumping the flake input to a patched
+   release over vendoring patched source directly.
+4. Document any intentional exception with a clear rationale.
+
+## Consumer-owned boundaries (do not cross)
+
+You MUST NOT:
+- Silently commit, merge, apply, or deploy any change.
+- Push to protected branches without a pull request and code review.
+- Embed private consumer paths, hostnames, VM names, or local operational
+  policy into any upstream scanner file or skill document.
+
+You MUST:
+- Propose all changes as a pull request or reviewed diff.
+- Document residual findings that cannot be remediated right now.
+- Re-scan after applying fixes to confirm the finding count decreased.
+
+## Skills reference
+
+Use the bundled \`d2b-vuln-remediation\` skill (GitHub or Claude variant) for
+structured, step-by-step guidance on how to triage, propose, and validate fixes.
+PROMPT_EOF
+
 chmod 600 "$prompt"
+
+find "$state_dir/remediation" -name 'prompt-*.md' -printf '%T@ %p\0' 2>/dev/null \
+  | sort -z -n | head -z -n "-${prompt_retention}" \
+  | cut -z -d' ' -f2- | xargs -0 -r rm -f || true
 
 echo "d2b-vuln-remediate: prompt written to $prompt"
 
 if [ -z "$agent_json" ]; then
-  echo "d2b-vuln-remediate: no agent configured; set --agent-argv-json." >&2
+  echo "d2b-vuln-remediate: no agent configured; set --agent-argv-json or D2B_AGENT_ARGV_JSON" >&2
   exit 0
 fi
 
-mapfile -t argv < <(jq -r --arg prompt "$prompt" '.[] | gsub("\\{prompt_file\\}"; $prompt)' <<<"$agent_json")
-log="$state_dir/remediation/remediate-$(date -u +%Y%m%dT%H%M%SZ).log"
-set +e
-"${argv[@]}" 2>&1 | tee "$log"
-status="${PIPESTATUS[0]}"
-set -e
-exit "$status"
+if ! jq -e 'type == "array" and length > 0 and all(.[]; type == "string")' <<<"$agent_json" >/dev/null; then
+  echo "d2b-vuln-remediate: agent argv must be a non-empty JSON array of strings" >&2
+  exit 64
+fi
 
+mapfile -d '' -t argv < <(
+  jq -j --arg p "$prompt" \
+    '.[] | gsub("\\{prompt_file\\}"; $p) | . + "\u0000"' \
+    <<<"$agent_json"
+)
+
+log_ts="$(date -u +%Y%m%dT%H%M%SZ)"
+log="$state_dir/remediation/remediate-${log_ts}.log"
+
+# Auto-detect invocation mode: if the original JSON contained "{prompt_file}",
+# use prompt-file mode (argv substitution).  Otherwise use stdin mode.
+if jq -e 'any(.[]; contains("{prompt_file}"))' <<<"$agent_json" >/dev/null 2>&1; then
+  set +e
+  "${argv[@]}" 2>&1 | tee "$log"
+  status="${PIPESTATUS[0]}"
+  set -e
+else
+  set +e
+  "${argv[@]}" < "$prompt" 2>&1 | tee "$log"
+  status="${PIPESTATUS[0]}"
+  set -e
+fi
+
+find "$state_dir/remediation" -name 'remediate-*.log' -printf '%T@ %p\0' 2>/dev/null \
+  | sort -z -n | head -z -n "-${log_retention}" \
+  | cut -z -d' ' -f2- | xargs -0 -r rm -f || true
+
+exit "$status"
