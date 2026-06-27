@@ -1,10 +1,10 @@
-.PHONY: check test test-unit test-shell test-fixtures test-nix test-modules test-policy test-nixling-discovery test-changelog
+.PHONY: check test test-unit test-shell test-fixtures test-nix test-modules test-policy test-d2b-discovery test-changelog
 
 check: test
 
 test: test-unit
 
-test-unit: test-shell test-fixtures test-nix test-modules test-policy test-nixling-discovery test-changelog
+test-unit: test-shell test-fixtures test-nix test-modules test-policy test-d2b-discovery test-changelog
 
 test-shell:
 	shellcheck bin/d2b-vuln-*
@@ -24,8 +24,8 @@ test-modules:
 test-policy:
 	bash tests/test-policy.sh
 
-test-nixling-discovery:
-	bash tests/test-nixling-discovery.sh
+test-d2b-discovery:
+	bash tests/test-d2b-discovery.sh
 
 test-changelog:
 	bash tests/test-changelog.sh

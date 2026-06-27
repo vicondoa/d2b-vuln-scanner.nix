@@ -94,8 +94,8 @@ fi
 for skill_file in "$root/skills"/*/d2b-vuln-remediation/SKILL.md; do
   [[ -f "$skill_file" ]] || continue
 
-  if ! grep -q 'nixling-vm' "$skill_file"; then
-    echo "POLICY: $skill_file missing nixling VM source label documentation" >&2
+  if ! grep -q 'd2b-vm' "$skill_file"; then
+    echo "POLICY: $skill_file missing d2b VM source label documentation" >&2
     ok=0
   fi
 
@@ -165,9 +165,9 @@ else
     ok=0
   fi
 
-  # Must be scoped to nixling-native consumers.
-  if ! grep -qi 'nixling' "$migration_guide"; then
-    echo "POLICY: consumer-migration.md does not mention nixling scope" >&2
+  # Must be scoped to d2b-native consumers.
+  if ! grep -qi 'd2b' "$migration_guide"; then
+    echo "POLICY: consumer-migration.md does not mention d2b scope" >&2
     ok=0
   fi
 

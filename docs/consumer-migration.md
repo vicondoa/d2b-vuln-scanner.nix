@@ -1,7 +1,7 @@
 # Consumer migration guide
 
-This guide walks through integrating `d2b-vuln-scanner.nix` into a nixling
-consumer — a NixOS or Home Manager configuration that already uses nixling to
+This guide walks through integrating `d2b-vuln-scanner.nix` into a d2b
+consumer — a NixOS or Home Manager configuration that already uses d2b to
 manage microVMs.
 
 All names in this guide are synthetic (e.g. `your-org`, `youruser`,
@@ -84,15 +84,15 @@ programs.d2b-vuln-scanner = {
   # Remove to resolve d2b-vuln-* commands from PATH instead.
   package = inputs.d2b-vuln-scanner.packages.${pkgs.system}.default;
 
-  nixling = {
-    # Point at your nixling CLI package if nixling is not on the system PATH.
-    # cliPackage = inputs.nixling.packages.${pkgs.system}.default;
+  d2b = {
+    # Point at your d2b CLI package if d2b is not on the system PATH.
+    # cliPackage = inputs.d2b.packages.${pkgs.system}.default;
 
     # Or supply an explicit path:
-    # cliPath = "/run/current-system/sw/bin/nixling";
+    # cliPath = "/run/current-system/sw/bin/d2b";
 
     # Override the fallback manifest if your consumer places it elsewhere.
-    # manifestPath = "/run/current-system/sw/share/nixling/vms.json";
+    # manifestPath = "/run/current-system/sw/share/d2b/vms.json";
 
     # Scan net VMs (default: true). Set false to exclude them.
     includeNetVms = true;
@@ -354,6 +354,6 @@ If you need to back out the integration:
   Waybar JSON schema, CSS classes, `d2b-vuln-open` viewer selection
 - [remediation.md](remediation.md) — prompt-file contract, agent invocation
   modes, exit codes, skill definitions
-- [nixling-integration.md](nixling-integration.md) — how the scanner
-  discovers nixling VMs and labels findings
+- [d2b-integration.md](d2b-integration.md) — how the scanner
+  discovers d2b VMs and labels findings
 

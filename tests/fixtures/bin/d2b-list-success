@@ -3,7 +3,7 @@ set -euo pipefail
 
 case "${1:-} ${2:-}" in
   "list --json")
-    cat "${D2B_NIXLING_LIST_FIXTURE:-$(dirname "$0")/../nixling-list.json}"
+    cat "${D2B_LIST_FIXTURE:-$(dirname "$0")/../d2b-list.json}"
     ;;
   "inspect alpha-vm"|"inspect sys-alpha-net")
     if [ "${D2B_ALLOW_INSPECT_FALLBACK:-0}" = "1" ]; then
@@ -14,7 +14,7 @@ case "${1:-} ${2:-}" in
     fi
     ;;
   *)
-    echo "unexpected nixling mock call: $*" >&2
+    echo "unexpected d2b mock call: $*" >&2
     exit 64
     ;;
 esac

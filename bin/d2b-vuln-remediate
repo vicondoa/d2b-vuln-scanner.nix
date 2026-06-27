@@ -77,10 +77,10 @@ critical="$(jq -r '.totals.critical // 0' "$summary")"
 high="$(jq -r '.totals.high     // 0' "$summary")"
 high_critical="$(jq -r '.high_critical  // 0' "$summary")"
 new_hc="$(jq -r '.new_high_critical // 0' "$summary")"
-vm_count="$(jq -r '.nixling.vm_count // 0' "$summary")"
+vm_count="$(jq -r '.d2b.vm_count // 0' "$summary")"
 scan_errors="$(jq -r '.errors // 0' "$summary")"
 
-vm_labels="$(grep -oE 'nix:nixling-vm:[A-Za-z0-9._-]+' "$report_path" 2>/dev/null \
+vm_labels="$(grep -oE 'nix:d2b-vm:[A-Za-z0-9._-]+' "$report_path" 2>/dev/null \
   | sort -u | paste -sd ' ' - || true)"
 vm_labels="${vm_labels:-none detected}"
 
@@ -107,7 +107,7 @@ Scanner state directory: ${state_dir}
 | Total critical+high         | ${high_critical}                  |
 | New critical+high this run  | ${new_hc}                         |
 | Scan errors                 | ${scan_errors}                    |
-| Nixling VMs discovered      | ${vm_count}                       |
+| d2b VMs discovered      | ${vm_count}                       |
 | VM source labels in report  | ${vm_labels}                      |
 
 ## Source label taxonomy
@@ -115,10 +115,10 @@ Scanner state directory: ${state_dir}
 Findings are tagged with source labels in the SOURCE column of the report:
 
 - \`nix:host\`                  — vulnerabilities in the host NixOS closure.
-- \`nix:nixling-vm:<vm-name>\`  — vulnerabilities in the named nixling VM's closure.
+- \`nix:d2b-vm:<vm-name>\`  — vulnerabilities in the named d2b VM's closure.
 - \`dep:<input-name>\`          — vulnerabilities from scanning a flake input via osv-scanner.
 
-Treat every \`nix:nixling-vm:\` finding as a nixling closure finding.
+Treat every \`nix:d2b-vm:\` finding as a d2b closure finding.
 When the same CVE appears in both \`nix:host\` and one or more VM labels,
 a single nixpkgs input bump typically fixes all instances at once.
 
@@ -145,7 +145,7 @@ explicitly in the PR/change description as:
 
 ## Nix remediation policy (cache-safe)
 
-1. Prefer bumping the \`nixpkgs\` (or relevant nixling) input to a revision
+1. Prefer bumping the \`nixpkgs\` (or relevant d2b) input to a revision
    that already has a binary substitute on cache.nixos.org.
 2. Do NOT introduce local source overrides for core or high-fanout packages
    (e.g. OpenSSL, glibc, LLVM, systemd, Python, Perl, GStreamer, ffmpeg).

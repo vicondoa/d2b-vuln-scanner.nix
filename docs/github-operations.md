@@ -23,7 +23,7 @@ Triggers on every pull request and every push to `main`.
 
 | Job | What it does |
 |-----|-------------|
-| `check` | Runs `make check` (shellcheck, fixture tests, `nix flake check`, policy tests, changelog lint, nixling discovery). |
+| `check` | Runs `make check` (shellcheck, fixture tests, `nix flake check`, policy tests, changelog lint, d2b discovery). |
 
 `check` is the required status for branch protection. Do not rename it.
 

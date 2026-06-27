@@ -1,14 +1,14 @@
 ---
 name: d2b-vuln-remediation
 description: >
-  Remediate d2b-vuln-scanner findings in nixling consumer repositories.
+  Remediate d2b-vuln-scanner findings in d2b consumer repositories.
   Use when a d2b-vuln-scan report identifies Critical/High vulnerabilities.
 ---
 
 # d2b vulnerability remediation (GitHub skill)
 
 Use this skill when a `d2b-vuln-scan` report identifies Critical/High findings
-in a nixling consumer repository.
+in a d2b consumer repository.
 
 ## Scope
 
@@ -26,7 +26,7 @@ argv placeholder or stdin.  It contains:
 - Paths to `summary.json` and `latest.txt` (the report).
 - Finding counts (critical, high, new since last run, scan errors).
 - The list of **VM source labels** present in the report (e.g.
-  `nix:nixling-vm:my-vm`).
+  `nix:d2b-vm:my-vm`).
 - The scan command for re-validation.
 - Consumer boundary rules.
 
@@ -40,10 +40,10 @@ Group findings by the SOURCE column:
 | Label                       | Meaning                                               |
 |-----------------------------|-------------------------------------------------------|
 | `nix:host`                  | Host NixOS closure vulnerability.                     |
-| `nix:nixling-vm:<vm-name>`  | Named nixling VM closure vulnerability.               |
+| `nix:d2b-vm:<vm-name>`  | Named d2b VM closure vulnerability.               |
 | `dep:<input-name>`          | Flake input scanned by osv-scanner.                   |
 
-Treat every `nix:nixling-vm:` finding as a **nixling closure finding**.
+Treat every `nix:d2b-vm:` finding as a **d2b closure finding**.
 When the same CVE appears under both `nix:host` and one or more VM labels,
 a single nixpkgs input bump typically resolves all instances.
 
@@ -54,7 +54,7 @@ a single nixpkgs input bump typically resolves all instances.
 1. Bump the `nixpkgs` input to a revision that already has a binary substitute
    on `cache.nixos.org`.  Check the NixOS security tracker or the nixpkgs
    commit log for the fix.
-2. Bump the upstream nixling input if the fix lives in the nixling package set.
+2. Bump the upstream d2b input if the fix lives in the d2b package set.
 3. Bump the affected flake input (`dep:<name>`) to a patched release.
 
 **Avoid:**

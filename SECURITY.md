@@ -1,6 +1,6 @@
 # Security policy
 
-`d2b-vuln-scanner.nix` reads local nixling inventory metadata and scanner output.
+`d2b-vuln-scanner.nix` reads local d2b inventory metadata and scanner output.
 Reports contain package names, versions, advisory IDs, source labels, and VM
 labels; they must not contain source contents or secrets.
 

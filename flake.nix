@@ -1,5 +1,5 @@
 {
-  description = "Nixling-native vulnerability scanner flake";
+  description = "d2b-native vulnerability scanner flake";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -188,7 +188,7 @@
               make test-shell
               make test-fixtures
               make test-policy
-              make test-nixling-discovery
+              make test-d2b-discovery
               make test-modules
               make test-changelog
               touch $out
