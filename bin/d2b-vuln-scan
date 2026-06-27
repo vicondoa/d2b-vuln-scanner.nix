@@ -77,7 +77,8 @@ discover_vms() {
           usbip: (.value.usbipYubikey // .value.usbip // false),
           staticIp: (.value.staticIp // null),
           status: "unknown",
-          isNetVm: (.value.isNetVm // false)
+          isNetVm: (.value.isNetVm // false),
+          guestClosureOutPath: (.value.guestClosureOutPath // .value.closureOutPath // null)
         })' "$nixling_manifest" > "$vms_json" 2>/dev/null \
       || { json_error nixling-discovery "fallback manifest is malformed"; return 1; }
     return 0
@@ -168,16 +169,29 @@ fi
 jq -c --arg include_net "$include_net_vms" '
   .[]
   | select(($include_net == "1" or $include_net == "true") or (.isNetVm | not))
-  | {name, env, status, isNetVm}' "$vms_json" 2>/dev/null \
+  | {
+      name,
+      env,
+      status,
+      isNetVm,
+      closureOutPath: (.guestClosureOutPath // .closureOutPath // .closurePath // .outPath // null)
+    }' "$vms_json" 2>/dev/null \
   | while IFS= read -r vmrow; do
       vm="$(jq -r '.name' <<<"$vmrow")"
       if [[ ! "$vm" =~ ^[A-Za-z0-9._-]+$ ]]; then
         json_error "nix:nixling-vm" "invalid VM name from nixling: $vm"
         continue
       fi
-      closure="$(vm_closure_path "$vm" || true)"
+      closure="$(jq -r '.closureOutPath // empty' <<<"$vmrow")"
+      if [ -z "$closure" ]; then
+        closure="$(vm_closure_path "$vm" || true)"
+      fi
       if [ -z "$closure" ]; then
         json_error "nix:nixling-vm:$vm" "nixling did not expose a VM closure out path"
+        continue
+      fi
+      if [[ "$closure" != /nix/store/* ]]; then
+        json_error "nix:nixling-vm:$vm" "nixling exposed a VM closure out path outside /nix/store"
         continue
       fi
       scan_closure "nix:nixling-vm:$vm" "$closure"
@@ -269,4 +283,3 @@ fi
 if [ "$new_highcrit" -gt 0 ] && [ "${D2B_NOTIFY_FINDINGS:-0}" = "1" ] && command -v notify-send >/dev/null 2>&1; then
   notify-send -u critical -a d2b-vuln-scanner "$new_highcrit new vulnerabilities" "critical $c · high $h" || true
 fi
-

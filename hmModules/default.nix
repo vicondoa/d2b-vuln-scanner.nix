@@ -13,6 +13,7 @@ let
   # This lets d2b-vuln-status, d2b-vuln-waybar, and d2b-vuln-open find scan
   # state without requiring --state-dir on every invocation.
   wantSessionStateDir = cfg.statusHelper.enable || cfg.integrations.waybar.enable;
+  waybarModuleName = "custom/d2b-vuln";
 in
 {
   options.programs.d2b-vuln-scanner = {
@@ -219,6 +220,18 @@ in
       D2B_STATE_DIR = stateDir;
     };
 
+    programs.waybar.settings = lib.mkIf (cfg.integrations.waybar.enable && cfg.integrations.waybar.autowire) {
+      mainBar = {
+        modules-right = lib.mkAfter [ waybarModuleName ];
+        ${waybarModuleName} = {
+          exec = exe "d2b-vuln-waybar";
+          interval = 3600;
+          return-type = "json";
+          on-click = exe "d2b-vuln-open";
+        };
+      };
+    };
+
     systemd.user.services.d2b-vuln-scan = {
       Unit = {
         Description = "d2b nixling vulnerability scan";
@@ -271,4 +284,3 @@ in
     };
   };
 }
-

@@ -1,0 +1,13 @@
+[
+  {
+    "name": "alpha-vm",
+    "env": "alpha",
+    "graphics": false,
+    "tpm": false,
+    "usbip": false,
+    "staticIp": "192.0.2.10",
+    "status": "running",
+    "isNetVm": false,
+    "guestClosureOutPath": "relative/path"
+  }
+]
