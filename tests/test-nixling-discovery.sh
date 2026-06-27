@@ -50,3 +50,13 @@ jq -e '
   | map(select(.source == "nix:nixling-vm:alpha-vm"
       and .message == "nixling exposed a VM closure out path outside /nix/store"))
   | length == 1' "$tmp/state-relative-closure/summary.json" >/dev/null
+
+D2B_NIXLING_CLI="$root/tests/fixtures/bin/nixling-list-success" \
+D2B_NIXLING_LIST_FIXTURE="$root/tests/fixtures/nixling-list-qemu-media.json" \
+D2B_STATE_DIR="$tmp/state-qemu-media" \
+D2B_HOST_CLOSURE="$tmp/closure" \
+  "$root/bin/d2b-vuln-scan" --dry-run --flake "$root" >"$tmp/qemu-media.out"
+
+jq -e '.nixling.vm_count == 2' "$tmp/state-qemu-media/summary.json" >/dev/null
+jq -e 'all(.scan_errors[]?; (.source | startswith("nix:nixling-vm:") | not))' \
+  "$tmp/state-qemu-media/summary.json" >/dev/null

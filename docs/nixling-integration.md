@@ -11,5 +11,8 @@ The scanner uses nixling public contracts:
 
 Reports label VM closure findings as `nix:nixling-vm:<vm>`.
 
+VM rows with `runtimeKind = "qemu-media"` do not have a NixOS guest closure and
+are skipped when no closure path is exposed.
+
 If nixling does not expose a needed closure out path, add or request a nixling
 surface. Do not rely on private package-name conventions.
