@@ -14,6 +14,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
   fail-closed errors when no public closure path is available.
 - Home Manager Waybar autowiring now adds the `custom/d2b-vuln` module when
   `programs.d2b-vuln-scanner.integrations.waybar.autowire = true`.
+- QEMU-media nixling VMs without a NixOS guest closure are skipped during VM
+  closure scanning instead of being reported as closure-path errors.
 - Initial nixling-native vulnerability scanner flake skeleton with CLI commands,
   Home Manager/NixOS module placeholders, ADRs, CI, tests, and remediation skills.
 - Hardened nixling scanner contracts with richer status/remediation behavior,

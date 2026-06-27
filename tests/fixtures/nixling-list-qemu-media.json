@@ -1,0 +1,24 @@
+[
+  {
+    "name": "dark-live",
+    "env": "dark",
+    "graphics": false,
+    "tpm": false,
+    "usbip": false,
+    "staticIp": "10.50.0.10",
+    "status": "stopped",
+    "isNetVm": false,
+    "runtimeKind": "qemu-media"
+  },
+  {
+    "name": "alpha-vm",
+    "env": "alpha",
+    "graphics": false,
+    "tpm": false,
+    "usbip": false,
+    "staticIp": "192.0.2.10",
+    "status": "running",
+    "isNetVm": false,
+    "guestClosureOutPath": "/nix/store/alpha-vm-system"
+  }
+]
