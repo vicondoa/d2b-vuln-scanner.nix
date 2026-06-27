@@ -3,14 +3,18 @@ set -euo pipefail
 
 case "${1:-} ${2:-}" in
   "list --json")
-    cat "$(dirname "$0")/../nixling-list.json"
+    cat "${D2B_NIXLING_LIST_FIXTURE:-$(dirname "$0")/../nixling-list.json}"
     ;;
   "inspect alpha-vm"|"inspect sys-alpha-net")
-    printf '{"closureOutPath":"%s"}\n' "${D2B_TEST_CLOSURE_PATH:?}"
+    if [ "${D2B_ALLOW_INSPECT_FALLBACK:-0}" = "1" ]; then
+      printf '{"closureOutPath":"%s"}\n' "${D2B_TEST_CLOSURE_PATH:?}"
+    else
+      echo "inspect fallback should not be used for list guestClosureOutPath" >&2
+      exit 64
+    fi
     ;;
   *)
     echo "unexpected nixling mock call: $*" >&2
     exit 64
     ;;
 esac
-

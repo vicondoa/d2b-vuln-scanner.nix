@@ -9,6 +9,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Nixling VM scans now read `guestClosureOutPath` directly from
+  `nixling list --json`, with an explicit older-generation inspect fallback and
+  fail-closed errors when no public closure path is available.
 - Initial nixling-native vulnerability scanner flake skeleton with CLI commands,
   Home Manager/NixOS module placeholders, ADRs, CI, tests, and remediation skills.
 - Hardened nixling scanner contracts with richer status/remediation behavior,
