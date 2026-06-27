@@ -3,8 +3,8 @@
 Source labels:
 
 - `nix:host`
-- `nix:nixling-vm:<vm>`
-- `dep:nixling`
+- `nix:d2b-vm:<vm>`
+- `dep:d2b`
 - `dep:<input>`
 
 `summary.json` and `latest.txt` are stable local state contracts. Reports are

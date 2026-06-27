@@ -22,7 +22,7 @@ stable; consumers may key on them.
 | `ts`             | string  | Scan timestamp (`YYYYMMDDTHHMMSSz`), empty if unavailable |
 | `high_critical`  | integer | Count of high + critical findings                         |
 | `errors`         | integer | Total scan error count (all sources)                      |
-| `nixling_errors` | integer | Count of errors from nixling VM discovery specifically    |
+| `d2b_errors` | integer | Count of errors from d2b VM discovery specifically    |
 
 ### States and classes
 
@@ -31,16 +31,16 @@ stable; consumers may key on them.
 | `missing`          | `missing`  | No `summary.json` found; scanner has never run                   |
 | `invalid`          | `error`    | `summary.json` present but lacks a parseable timestamp           |
 | `stale`            | `stale`    | Scan timestamp older than `D2B_STALE_SECONDS` (default 26 h)    |
-| `scanner_failure`  | `error`    | Scan completed but ≥1 non-nixling-discovery error occurred       |
-| `nixling_failure`  | `warning`  | Scan completed; all errors were nixling VM-discovery failures    |
+| `scanner_failure`  | `error`    | Scan completed but ≥1 non-d2b-discovery error occurred       |
+| `d2b_failure`  | `warning`  | Scan completed; all errors were d2b VM-discovery failures    |
 | `findings`         | `critical` | Scan clean; high/critical CVEs present                           |
 | `clean`            | `clean`    | Scan clean; no high/critical CVEs                                |
 
 Priority when multiple conditions apply: `stale` → `scanner_failure` →
-`nixling_failure` → `findings` → `clean`.
+`d2b_failure` → `findings` → `clean`.
 
-`nixling_errors` lets consumers distinguish *all errors are nixling* vs *at
-least one non-nixling error* without re-examining `scan_errors`.
+`d2b_errors` lets consumers distinguish *all errors are d2b* vs *at
+least one non-d2b error* without re-examining `scan_errors`.
 
 ## Environment variables
 

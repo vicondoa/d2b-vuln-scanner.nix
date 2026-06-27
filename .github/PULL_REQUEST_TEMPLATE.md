@@ -3,7 +3,7 @@
 ## Testing
 
 - [ ] `make check` passes.
-- [ ] Nixling integration impact considered.
+- [ ] d2b integration impact considered.
 - [ ] Docs/ADRs updated when contracts changed.
 - [ ] Changelog updated, or `skip-changelog` label is justified.
 

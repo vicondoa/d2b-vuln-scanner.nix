@@ -17,7 +17,7 @@ check_status() {
   [ "$got_state"  = "$want_state"  ] || fail "$label: state expected=$want_state got=$got_state"
   [ "$got_class"  = "$want_class"  ] || fail "$label: class expected=$want_class got=$got_class"
   # JSON contract: all required keys must be present
-  jq -e 'has("state","class","text","ts","high_critical","errors","nixling_errors")' \
+  jq -e 'has("state","class","text","ts","high_critical","errors","d2b_errors")' \
     <<<"$out" >/dev/null || fail "$label: JSON contract violation – missing key(s)"
 }
 
@@ -75,27 +75,27 @@ wb_out="$(D2B_STATE_DIR="$tmp/findings" PATH="$root/bin:$PATH" "$root/bin/d2b-vu
 jq -e '.text | contains("3")' <<<"$wb_out" >/dev/null \
   || fail "findings (waybar): display text should contain finding count"
 
-# 6. nixling_failure – all errors are nixling-discovery
-mkdir -p "$tmp/nixling"
+# 6. d2b_failure – all errors are d2b-discovery
+mkdir -p "$tmp/d2b"
 jq -n --arg ts "$now_ts" '{ts:$ts,high_critical:0,errors:1,
-  scan_errors:[{source:"nixling-discovery",message:"nixling not found"}]}' \
-  > "$tmp/nixling/summary.json"
-check_status "nixling_failure" "$tmp/nixling" "nixling_failure" "warning"
-check_waybar "nixling_failure" "$tmp/nixling" "warning"
-nle="$(D2B_STATE_DIR="$tmp/nixling" "$root/bin/d2b-vuln-status" --json | jq -r '.nixling_errors')"
-[ "$nle" = "1" ] || fail "nixling_failure: nixling_errors expected=1 got=$nle"
+  scan_errors:[{source:"d2b-discovery",message:"d2b not found"}]}' \
+  > "$tmp/d2b/summary.json"
+check_status "d2b_failure" "$tmp/d2b" "d2b_failure" "warning"
+check_waybar "d2b_failure" "$tmp/d2b" "warning"
+nle="$(D2B_STATE_DIR="$tmp/d2b" "$root/bin/d2b-vuln-status" --json | jq -r '.d2b_errors')"
+[ "$nle" = "1" ] || fail "d2b_failure: d2b_errors expected=1 got=$nle"
 
-# 7. scanner_failure – at least one non-nixling error
+# 7. scanner_failure – at least one non-d2b error
 mkdir -p "$tmp/scfail"
 jq -n --arg ts "$now_ts" '{ts:$ts,high_critical:0,errors:2,
   scan_errors:[
-    {source:"nixling-discovery",message:"nixling not found"},
+    {source:"d2b-discovery",message:"d2b not found"},
     {source:"nix:host",message:"sbomnix failed"}]}' \
   > "$tmp/scfail/summary.json"
 check_status "scanner_failure" "$tmp/scfail" "scanner_failure" "error"
 check_waybar "scanner_failure" "$tmp/scfail" "error"
-sf_ne="$(D2B_STATE_DIR="$tmp/scfail" "$root/bin/d2b-vuln-status" --json | jq -r '.nixling_errors')"
-[ "$sf_ne" = "1" ] || fail "scanner_failure: nixling_errors expected=1 got=$sf_ne"
+sf_ne="$(D2B_STATE_DIR="$tmp/scfail" "$root/bin/d2b-vuln-status" --json | jq -r '.d2b_errors')"
+[ "$sf_ne" = "1" ] || fail "scanner_failure: d2b_errors expected=1 got=$sf_ne"
 sf_e="$( D2B_STATE_DIR="$tmp/scfail" "$root/bin/d2b-vuln-status" --json | jq -r '.errors')"
 [ "$sf_e"  = "2" ] || fail "scanner_failure: errors expected=2 got=$sf_e"
 

@@ -5,13 +5,13 @@ Operating manual for contributors and coding agents working on
 
 ## Project scope
 
-This is a nixling-native vulnerability scanner flake. It may use public nixling
-contracts such as `nixling list --json` and the public manifest schema, but it
+This is a d2b-native vulnerability scanner flake. It may use public d2b
+contracts such as `d2b list --json` and the public manifest schema, but it
 must not encode private consumer paths, VM names, hostnames, compositor config,
 or local operational policy.
 
 The `skills/` directory is for vulnerability-fixing agents that consume scanner
-findings in downstream nixling consumer repositories. Those skills are not the
+findings in downstream d2b consumer repositories. Those skills are not the
 workflow for maintaining this scanner repository.
 
 ## Validate
@@ -29,13 +29,13 @@ CI must call Makefile targets rather than duplicating command logic.
 ## Panel review
 
 Multi-wave work requires panel sign-off before implementation and before
-advancing waves. Minimum reviewers: software, test, nix, nixling, security,
+advancing waves. Minimum reviewers: software, test, nix, d2b, security,
 docs, product, desktop-integration, agent-automation, github-ci, and ops.
 
 Reviewers return JSON:
 
 ```json
-{"reviewer":"nixling","signoff":true,"summary":"...","recommendations":[]}
+{"reviewer":"d2b","signoff":true,"summary":"...","recommendations":[]}
 ```
 
 `signoff` is true iff `recommendations` is empty.
@@ -48,7 +48,7 @@ that operate on scanner findings in consumer repositories.  These skills are
 not the contributor workflow for this scanner repository.
 
 Key skill policies:
-- Bucket findings by `nix:host`, `nix:nixling-vm:<name>`, and `dep:<input>`
+- Bucket findings by `nix:host`, `nix:d2b-vm:<name>`, and `dep:<input>`
   source labels before proposing fixes.
 - Prefer cache-safe Nix input bumps over local source overrides.
 - Always propose changes for review; never silently commit, merge, or deploy.

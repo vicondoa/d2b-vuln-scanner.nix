@@ -28,9 +28,9 @@ contains:
 | Critical / High counts     | Finding counts from `summary.json`.                           |
 | New critical+high          | Findings new since the previous scan run.                     |
 | Scan errors                | Count of scan-phase errors (e.g. unreachable closures).       |
-| Nixling VMs discovered     | VM count from the nixling discovery phase.                    |
-| VM source labels           | `nix:nixling-vm:<name>` labels present in the report.         |
-| Source label taxonomy      | Explanation of `nix:host`, `nix:nixling-vm:`, `dep:` prefixes.|
+| d2b VMs discovered     | VM count from the d2b discovery phase.                    |
+| VM source labels           | `nix:d2b-vm:<name>` labels present in the report.         |
+| Source label taxonomy      | Explanation of `nix:host`, `nix:d2b-vm:`, `dep:` prefixes.|
 | Scan command               | Shell command to re-run the scan for post-fix validation.     |
 | Residual finding policy    | How to document findings that cannot be remediated.           |
 | Nix remediation policy     | Cache-safe rules: prefer input bumps over source overrides.   |
@@ -113,7 +113,7 @@ repositories:
 
 Both skills cover:
 
-- Triaging findings by source label (`nix:host`, `nix:nixling-vm:`, `dep:`).
+- Triaging findings by source label (`nix:host`, `nix:d2b-vm:`, `dep:`).
 - Cache-safe Nix remediation rules (input bumps preferred over source overrides).
 - Post-fix re-scan and residual finding documentation.
 - Consumer-owned deploy/apply boundaries.

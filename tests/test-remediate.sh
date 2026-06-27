@@ -28,10 +28,10 @@ make_state() {
   jq -n --arg ts "$ts" \
     '{ts:$ts, high_critical:2, new_high_critical:1, errors:0,
       totals:{critical:1, high:1, total:2},
-      nixling:{vm_count:2}}' > "$dir/summary.json"
+      d2b:{vm_count:2}}' > "$dir/summary.json"
   printf '%s\n' "SEVERITY  ID             PACKAGE  SOURCE                    FIXED" \
                 "Critical  CVE-2024-0001  foo 1.0  nix:host                  1.1" \
-                "High      CVE-2024-0002  bar 2.0  nix:nixling-vm:my-vm      2.1" \
+                "High      CVE-2024-0002  bar 2.0  nix:d2b-vm:my-vm      2.1" \
     > "$dir/report-${ts}.txt"
   ln -sfn "report-${ts}.txt" "$dir/latest.txt"
 }
@@ -69,7 +69,7 @@ check "stale summary exits 75" [ "$rc" -eq 75 ]
 # --- 3. Missing summary.json only → exit 75 ---
 d="$(fresh_dir "$base" noreport)"
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
-jq -n --arg ts "$ts" '{ts:$ts,high_critical:0,errors:0,totals:{critical:0,high:0,total:0},nixling:{vm_count:0}}' \
+jq -n --arg ts "$ts" '{ts:$ts,high_critical:0,errors:0,totals:{critical:0,high:0,total:0},d2b:{vm_count:0}}' \
   > "$d/summary.json"
 rc=0
 D2B_STATE_DIR="$d" "$root/bin/d2b-vuln-remediate" 2>/dev/null || rc=$?
@@ -103,7 +103,7 @@ check "prompt has Summary JSON"            grep -q 'Summary JSON'            "$p
 check "prompt has Latest report"           grep -q 'Latest report'           "$prompt_file"
 check "prompt has Scan timestamp"          grep -q 'Scan timestamp'          "$prompt_file"
 check "prompt has nix:host label"          grep -q 'nix:host'                "$prompt_file"
-check "prompt has nix:nixling-vm label"    grep -q 'nix:nixling-vm'          "$prompt_file"
+check "prompt has nix:d2b-vm label"    grep -q 'nix:d2b-vm'          "$prompt_file"
 check "prompt has dep: label"              grep -q 'dep:'                    "$prompt_file"
 check "prompt has scan command"            grep -q 'd2b-vuln-scan'           "$prompt_file"
 check "prompt has residual instruction"    grep -q 'residual:'               "$prompt_file"

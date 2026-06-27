@@ -17,7 +17,7 @@ let
 in
 {
   options.programs.d2b-vuln-scanner = {
-    enable = lib.mkEnableOption "nixling-native vulnerability scanning";
+    enable = lib.mkEnableOption "d2b-native vulnerability scanning";
 
     package = lib.mkOption {
       type = lib.types.nullOr lib.types.package;
@@ -29,12 +29,12 @@ in
       '';
     };
 
-    nixling = {
+    d2b = {
       cliPackage = lib.mkOption {
         type = lib.types.nullOr lib.types.package;
         default = null;
         description = ''
-          Optional nixling package. When set, cliPath automatically defaults to
+          Optional d2b package. When set, cliPath automatically defaults to
           this package's executable, so no separate cliPath override is needed.
           Takes precedence over cliPath when both are set explicitly.
         '';
@@ -42,26 +42,26 @@ in
       cliPath = lib.mkOption {
         type = lib.types.str;
         default =
-          if cfg.nixling.cliPackage != null
-          then lib.getExe cfg.nixling.cliPackage
-          else "nixling";
+          if cfg.d2b.cliPackage != null
+          then lib.getExe cfg.d2b.cliPackage
+          else "d2b";
         defaultText = lib.literalExpression ''
-          if config.programs.d2b-vuln-scanner.nixling.cliPackage != null
-          then lib.getExe config.programs.d2b-vuln-scanner.nixling.cliPackage
-          else "nixling"
+          if config.programs.d2b-vuln-scanner.d2b.cliPackage != null
+          then lib.getExe config.programs.d2b-vuln-scanner.d2b.cliPackage
+          else "d2b"
         '';
         description = ''
-          Absolute path or bare command name for the nixling CLI. Used as
-          D2B_NIXLING_CLI in the scan service environment. Override this when
-          nixling is not on the default PATH and you are not setting cliPackage.
+          Absolute path or bare command name for the d2b CLI. Used as
+          D2B_CLI in the scan service environment. Override this when
+          d2b is not on the default PATH and you are not setting cliPackage.
         '';
       };
       manifestPath = lib.mkOption {
         type = lib.types.path;
-        default = "/run/current-system/sw/share/nixling/vms.json";
+        default = "/run/current-system/sw/share/d2b/vms.json";
         description = ''
-          Fallback nixling VM manifest path. Read when nixling list --json is
-          unavailable (e.g. nixling is not installed). The scanner normalises this
+          Fallback d2b VM manifest path. Read when d2b list --json is
+          unavailable (e.g. d2b is not installed). The scanner normalises this
           into the same VM list schema as the live CLI output.
         '';
       };
@@ -69,7 +69,7 @@ in
         type = lib.types.bool;
         default = true;
         description = ''
-          Include nixling net VMs in vulnerability scans. Net VMs have access
+          Include d2b net VMs in vulnerability scans. Net VMs have access
           to host network interfaces; scanning them by default gives the broadest
           coverage. Set false to limit scans to non-net VMs.
         '';
@@ -234,7 +234,7 @@ in
 
     systemd.user.services.d2b-vuln-scan = {
       Unit = {
-        Description = "d2b nixling vulnerability scan";
+        Description = "d2b vulnerability scan";
         X-RestartIfChanged = false;
       } // lib.optionalAttrs cfg.remediation.autoStartOnSuccess {
         OnSuccess = [ "d2b-vuln-remediate.service" ];
@@ -243,10 +243,10 @@ in
         Type = "oneshot";
         ExecStart = lib.escapeShellArgs ([ (exe "d2b-vuln-scan") ] ++ scanArgs);
         Environment = [
-          "D2B_NIXLING_CLI=${cfg.nixling.cliPath}"
-          "D2B_NIXLING_MANIFEST=${toString cfg.nixling.manifestPath}"
+          "D2B_CLI=${cfg.d2b.cliPath}"
+          "D2B_MANIFEST=${toString cfg.d2b.manifestPath}"
           "D2B_HOST_CLOSURE=${cfg.scan.hostClosurePath}"
-          "D2B_INCLUDE_NET_VMS=${if cfg.nixling.includeNetVms then "1" else "0"}"
+          "D2B_INCLUDE_NET_VMS=${if cfg.d2b.includeNetVms then "1" else "0"}"
           "D2B_NOTIFY_FAILURES=${if cfg.notifications.enable then "1" else "0"}"
           "D2B_NOTIFY_FINDINGS=${if cfg.notifications.enable then "1" else "0"}"
         ];
@@ -259,7 +259,7 @@ in
     };
 
     systemd.user.timers.d2b-vuln-scan = lib.mkIf cfg.timer.enable {
-      Unit.Description = "d2b nixling vulnerability scan timer";
+      Unit.Description = "d2b vulnerability scan timer";
       Timer = {
         OnCalendar = cfg.timer.onCalendar;
         Persistent = true;

@@ -5,8 +5,8 @@ usage() {
   cat <<'USAGE'
 usage: d2b-vuln-scan [--dry-run] [--state-dir DIR] [--flake PATH]
 
-Nixling-native vulnerability scan. Discovers VMs with `nixling list --json`,
-falls back to the public nixling manifest when configured/available, and scans
+d2b-native vulnerability scan. Discovers VMs with `d2b list --json`,
+falls back to the public d2b manifest when configured/available, and scans
 host/VM closures plus selected flake inputs.
 USAGE
 }
@@ -16,8 +16,8 @@ state_dir="${D2B_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/d2b-vuln-scann
 cache_dir="${D2B_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/d2b-vuln-scanner}"
 flake="${D2B_FLAKE:-.}"
 host_closure="${D2B_HOST_CLOSURE:-/run/current-system}"
-nixling_cli="${D2B_NIXLING_CLI:-nixling}"
-nixling_manifest="${D2B_NIXLING_MANIFEST:-/run/current-system/sw/share/nixling/vms.json}"
+d2b_cli="${D2B_CLI:-d2b}"
+d2b_manifest="${D2B_MANIFEST:-/run/current-system/sw/share/d2b/vms.json}"
 include_net_vms="${D2B_INCLUDE_NET_VMS:-1}"
 severity_threshold="${D2B_SEVERITY_THRESHOLD:-High}"
 retention="${D2B_REPORT_RETENTION:-20}"
@@ -57,16 +57,16 @@ json_error() {
 }
 
 discover_vms() {
-  if "$nixling_cli" list --json > "$vms_json" 2>"$work/nixling-list.err"; then
+  if "$d2b_cli" list --json > "$vms_json" 2>"$work/d2b-list.err"; then
     if jq -e 'type == "array" and all(.[]; has("name") and has("status") and has("isNetVm"))' "$vms_json" >/dev/null; then
       return 0
     fi
-    json_error nixling-discovery "nixling list --json returned invalid schema"
+    json_error d2b-discovery "d2b list --json returned invalid schema"
   else
-    json_error nixling-discovery "$(tr '\n' ' ' < "$work/nixling-list.err" | sed 's/[[:space:]]*$//')"
+    json_error d2b-discovery "$(tr '\n' ' ' < "$work/d2b-list.err" | sed 's/[[:space:]]*$//')"
   fi
 
-  if [ -r "$nixling_manifest" ]; then
+  if [ -r "$d2b_manifest" ]; then
     jq 'to_entries
       | map(select(.key | startswith("_") | not))
       | map({
@@ -79,8 +79,8 @@ discover_vms() {
           status: "unknown",
           isNetVm: (.value.isNetVm // false),
           guestClosureOutPath: (.value.guestClosureOutPath // .value.closureOutPath // null)
-        })' "$nixling_manifest" > "$vms_json" 2>/dev/null \
-      || { json_error nixling-discovery "fallback manifest is malformed"; return 1; }
+        })' "$d2b_manifest" > "$vms_json" 2>/dev/null \
+      || { json_error d2b-discovery "fallback manifest is malformed"; return 1; }
     return 0
   fi
 
@@ -116,7 +116,7 @@ scan_closure() {
 vm_closure_path() {
   local vm="$1"
   local inspect="$work/inspect-$vm.json"
-  if "$nixling_cli" inspect "$vm" --json > "$inspect" 2>/dev/null; then
+  if "$d2b_cli" inspect "$vm" --json > "$inspect" 2>/dev/null; then
     jq -r '.closureOutPath // .closurePath // .guestClosureOutPath // .outPath // empty' "$inspect"
     return 0
   fi
@@ -157,7 +157,7 @@ scan_inputs() {
 }
 
 if ! discover_vms; then
-  json_error nixling-discovery "could not discover nixling VMs"
+  json_error d2b-discovery "could not discover d2b VMs"
 fi
 
 if [ -e "$host_closure" ]; then
@@ -180,7 +180,7 @@ jq -c --arg include_net "$include_net_vms" '
   | while IFS= read -r vmrow; do
       vm="$(jq -r '.name' <<<"$vmrow")"
       if [[ ! "$vm" =~ ^[A-Za-z0-9._-]+$ ]]; then
-        json_error "nix:nixling-vm" "invalid VM name from nixling: $vm"
+        json_error "nix:d2b-vm" "invalid VM name from d2b: $vm"
         continue
       fi
       closure="$(jq -r '.closureOutPath // empty' <<<"$vmrow")"
@@ -192,14 +192,14 @@ jq -c --arg include_net "$include_net_vms" '
         if [ "$runtime_kind" = "qemu-media" ]; then
           continue
         fi
-        json_error "nix:nixling-vm:$vm" "nixling did not expose a VM closure out path"
+        json_error "nix:d2b-vm:$vm" "d2b did not expose a VM closure out path"
         continue
       fi
       if [[ "$closure" != /nix/store/* ]]; then
-        json_error "nix:nixling-vm:$vm" "nixling exposed a VM closure out path outside /nix/store"
+        json_error "nix:d2b-vm:$vm" "d2b exposed a VM closure out path outside /nix/store"
         continue
       fi
-      scan_closure "nix:nixling-vm:$vm" "$closure"
+      scan_closure "nix:d2b-vm:$vm" "$closure"
     done
 
 scan_inputs
@@ -254,7 +254,7 @@ jq -n \
     new_high_critical:$newhc,
     errors:$errors,
     scan_errors:$scan_errors,
-    nixling:{vm_count:($vms[0] | length)}}' > "$summary_tmp"
+    d2b:{vm_count:($vms[0] | length)}}' > "$summary_tmp"
 mv "$summary_tmp" "$state_dir/summary.json"
 
 report="$state_dir/report-$ts.txt"

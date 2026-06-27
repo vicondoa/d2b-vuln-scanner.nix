@@ -5,7 +5,7 @@ let
 in
 {
   options.services.d2b-vuln-scanner = {
-    enable = lib.mkEnableOption "system-level defaults for d2b nixling vulnerability scanning";
+    enable = lib.mkEnableOption "system-level defaults for d2b vulnerability scanning";
     package = lib.mkOption {
       type = lib.types.nullOr lib.types.package;
       default = null;
