@@ -16,6 +16,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `programs.d2b-vuln-scanner.integrations.waybar.autowire = true`.
 - QEMU-media nixling VMs without a NixOS guest closure are skipped during VM
   closure scanning instead of being reported as closure-path errors.
+- The Home Manager scan service no longer sets `RuntimeMaxSec` on its oneshot
+  unit, avoiding systemd's ignored-setting warning.
 - Initial nixling-native vulnerability scanner flake skeleton with CLI commands,
   Home Manager/NixOS module placeholders, ADRs, CI, tests, and remediation skills.
 - Hardened nixling scanner contracts with richer status/remediation behavior,

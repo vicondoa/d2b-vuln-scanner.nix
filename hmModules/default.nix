@@ -255,7 +255,6 @@ in
         IOSchedulingPriority = 7;
         CPUWeight = 50;
         MemoryMax = "1G";
-        RuntimeMaxSec = "2h";
       };
     };
 
