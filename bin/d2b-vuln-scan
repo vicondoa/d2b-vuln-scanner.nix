@@ -190,8 +190,8 @@ jq -c --arg include_net "$include_net_vms" '
         json_error "nix:nixling-vm:$vm" "nixling did not expose a VM closure out path"
         continue
       fi
-      if [[ "$closure" != /* ]]; then
-        json_error "nix:nixling-vm:$vm" "nixling exposed a non-absolute VM closure out path"
+      if [[ "$closure" != /nix/store/* ]]; then
+        json_error "nix:nixling-vm:$vm" "nixling exposed a VM closure out path outside /nix/store"
         continue
       fi
       scan_closure "nix:nixling-vm:$vm" "$closure"

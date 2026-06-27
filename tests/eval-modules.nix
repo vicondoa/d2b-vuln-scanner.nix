@@ -39,6 +39,10 @@ let
         type = lib.types.attrsOf lib.types.anything;
         default = { };
       };
+      programs.waybar.settings = lib.mkOption {
+        type = lib.types.attrsOf lib.types.anything;
+        default = { };
+      };
     };
   };
 
@@ -115,6 +119,25 @@ let
       (assertHas "waybar-helper/state-dir-var" c.home.sessionVariables "D2B_STATE_DIR")
     ];
 
+  # 4b. integrations.waybar.autowire → custom Waybar module is declared.
+  testWaybarAutowire =
+    let c = evalHm [{
+      config.programs.d2b-vuln-scanner = {
+        enable = true;
+        integrations.waybar = {
+          enable = true;
+          autowire = true;
+        };
+      };
+    }]; in
+    [
+      (assertHas "waybar-autowire/mainbar" c.programs.waybar.settings "mainBar")
+      (assertHas "waybar-autowire/custom-module" c.programs.waybar.settings.mainBar "custom/d2b-vuln")
+      (assertEq "waybar-autowire/return-type"
+        c.programs.waybar.settings.mainBar."custom/d2b-vuln".return-type
+        "json")
+    ];
+
   # 5. remediation.enable → remediate service present alongside scan service
   testRemediationEnabled =
     let c = evalHm [{
@@ -145,6 +168,7 @@ let
     ++ testScanOnly
     ++ testStatusHelper
     ++ testWaybarHelper
+    ++ testWaybarAutowire
     ++ testRemediationEnabled
     ++ testTimerEnabled;
 

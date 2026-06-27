@@ -96,6 +96,10 @@
                 type = lib.types.attrsOf lib.types.anything;
                 default = { };
               };
+              programs.waybar.settings = lib.mkOption {
+                type = lib.types.attrsOf lib.types.anything;
+                default = { };
+              };
             };
           };
           evalHm = extraModules:
@@ -157,6 +161,19 @@
             }]; in
               assert c.systemd.user.timers ? "d2b-vuln-scan";
               "timer-enabled: PASS")
+            # 7. Waybar autowire adds the custom module only when explicitly enabled
+            (let c = evalHm [{
+              config.programs.d2b-vuln-scanner = {
+                enable = true;
+                integrations.waybar = {
+                  enable = true;
+                  autowire = true;
+                };
+              };
+            }]; in
+              assert c.programs.waybar.settings.mainBar ? "custom/d2b-vuln";
+              assert c.programs.waybar.settings.mainBar."custom/d2b-vuln".return-type == "json";
+              "waybar-autowire: PASS")
           ];
         in
         {
